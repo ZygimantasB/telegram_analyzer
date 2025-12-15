@@ -1,0 +1,103 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+    <div class="container">
+        <!-- Brand -->
+        <a class="navbar-brand fw-bold" href="/">
+            <i class="bi bi-telegram"></i> Telegram Analyzer
+        </a>
+
+        <!-- Mobile Toggle -->
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain" aria-controls="navbarMain" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <!-- Navbar Content -->
+        <div class="collapse navbar-collapse" id="navbarMain">
+            <!-- Left Side Links -->
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                <li class="nav-item">
+                    <a class="nav-link" href="/">
+                        <i class="bi bi-house"></i> Home
+                    </a>
+                </li>
+                {% if user.is_authenticated %}
+                <li class="nav-item">
+                    <a class="nav-link" href="#">
+                        <i class="bi bi-chat-dots"></i> Chats
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">
+                        <i class="bi bi-bar-chart"></i> Analytics
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-gear"></i> Tools
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-download"></i> Export Data</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-search"></i> Search Messages</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-sliders"></i> Settings</a></li>
+                    </ul>
+                </li>
+                {% endif %}
+            </ul>
+
+            <!-- Right Side - Auth -->
+            <ul class="navbar-nav">
+                {% if user.is_authenticated %}
+                <!-- Logged In User -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        {% if user.avatar %}
+                        <img src="{{ user.avatar.url }}" alt="Avatar" class="rounded-circle me-2" style="width: 28px; height: 28px; object-fit: cover;">
+                        {% else %}
+                        <i class="bi bi-person-circle me-2"></i>
+                        {% endif %}
+                        {{ user.username }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <span class="dropdown-item-text text-muted small">
+                                Signed in as <strong>{{ user.email }}</strong>
+                            </span>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'users:profile' %}">
+                                <i class="bi bi-person"></i> Profile
+                            </a>
+                        </li>
+                        {% if user.is_staff %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'admin:index' %}">
+                                <i class="bi bi-shield-lock"></i> Admin Panel
+                            </a>
+                        </li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item text-danger" href="{% url 'users:logout' %}">
+                                <i class="bi bi-box-arrow-right"></i> Logout
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% else %}
+                <!-- Guest User -->
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'users:login' %}">
+                        <i class="bi bi-box-arrow-in-right"></i> Login
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="btn btn-outline-light ms-2" href="{% url 'users:register' %}">
+                        <i class="bi bi-person-plus"></i> Register
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>

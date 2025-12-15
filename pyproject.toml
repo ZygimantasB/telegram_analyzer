@@ -9,4 +9,5 @@ dependencies = [
     "python-decouple>=3.8",
     "telethon>=1.42.0",
     "tgcrypto>=1.2.5",
+    "pillow>=11.0.0",
 ]
