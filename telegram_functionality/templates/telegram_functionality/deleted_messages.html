@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Deleted Messages - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'telegram_functionality/css/deleted_messages.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -135,13 +140,4 @@
         </div>
     </div>
 </div>
-
-<style>
-.min-width-0 {
-    min-width: 0;
-}
-.list-group-item {
-    border-left: 3px solid #dc3545;
-}
-</style>
 {% endblock %}

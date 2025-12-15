@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}All Messages - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'telegram_functionality/css/all_messages.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -122,20 +127,4 @@
         </div>
     </div>
 </div>
-
-<style>
-.min-width-0 {
-    min-width: 0;
-}
-.text-truncate-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.list-group-item:hover {
-    background-color: #f8f9fa;
-}
-</style>
 {% endblock %}

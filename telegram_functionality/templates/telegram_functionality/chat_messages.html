@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}{{ chat.title }} - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'telegram_functionality/css/chat_messages.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
@@ -159,110 +164,8 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
-<style>
-.messages-container {
-    max-height: 70vh;
-    overflow-y: auto;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-}
-
-.message {
-    max-width: 75%;
-    margin-bottom: 0.75rem;
-}
-
-.message-incoming {
-    align-self: flex-start;
-}
-
-.message-outgoing {
-    align-self: flex-end;
-}
-
-.message-bubble {
-    padding: 0.5rem 0.75rem;
-    border-radius: 1rem;
-    position: relative;
-}
-
-.message-incoming .message-bubble {
-    background-color: #f1f3f4;
-    border-bottom-left-radius: 0.25rem;
-}
-
-.message-outgoing .message-bubble {
-    background-color: #dcf8c6;
-    border-bottom-right-radius: 0.25rem;
-}
-
-.message-deleted .message-bubble {
-    background-color: #ffebee;
-    border: 1px dashed #dc3545;
-}
-
-.deleted-badge {
-    font-size: 0.7rem;
-    color: #dc3545;
-    margin-bottom: 0.25rem;
-}
-
-.message-sender {
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: #075e54;
-    margin-bottom: 0.25rem;
-}
-
-.message-text {
-    word-wrap: break-word;
-    white-space: pre-wrap;
-}
-
-.message-meta {
-    font-size: 0.7rem;
-    color: #667781;
-    text-align: right;
-    margin-top: 0.25rem;
-}
-
-.message-time {
-    margin-right: 0.5rem;
-}
-
-.message-views {
-    margin-right: 0.5rem;
-}
-
-.message-reply {
-    font-size: 0.8rem;
-    color: #667781;
-    border-left: 3px solid #25d366;
-    padding-left: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.message-media {
-    background: rgba(0,0,0,0.05);
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-</style>
-
-<script>
-function toggleDeleted() {
-    const checkbox = document.getElementById('showDeleted');
-    const url = new URL(window.location);
-    if (checkbox.checked) {
-        url.searchParams.set('show_deleted', 'true');
-    } else {
-        url.searchParams.delete('show_deleted');
-    }
-    url.searchParams.set('page', '1');
-    window.location = url;
-}
-</script>
+{% block extra_js %}
+<script src="{% static 'telegram_functionality/js/chat_messages.js' %}"></script>
 {% endblock %}

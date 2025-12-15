@@ -1,0 +1,6 @@
+.min-width-0 {
+    min-width: 0;
+}
+.list-group-item {
+    border-left: 3px solid #dc3545;
+}
