@@ -36,8 +36,33 @@
                                 </small>
                             </div>
                         </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <span class="badge bg-secondary">{{ total_messages }} messages</span>
+                            {% if deleted_count > 0 %}
+                            <span class="badge bg-danger">{{ deleted_count }} deleted</span>
+                            {% endif %}
+                            <a href="{% url 'telegram:sync_chat' chat_id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-arrow-repeat"></i> Sync
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="card mb-3">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <span class="badge bg-secondary">{{ messages|length }} messages loaded</span>
+                            {% if last_synced %}
+                            <small class="text-muted">Last synced: {{ last_synced|date:"M d, Y H:i" }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="showDeleted"
+                                   {% if show_deleted %}checked{% endif %}
+                                   onchange="toggleDeleted()">
+                            <label class="form-check-label" for="showDeleted">Show deleted messages</label>
                         </div>
                     </div>
                 </div>
@@ -47,10 +72,16 @@
             <div class="card shadow">
                 <div class="card-body p-0">
                     <div class="messages-container" id="messagesContainer">
-                        {% if messages %}
-                        {% for msg in messages reversed %}
-                        <div class="message {% if msg.is_outgoing %}message-outgoing{% else %}message-incoming{% endif %}" data-msg-id="{{ msg.id }}">
+                        {% if chat_messages %}
+                        {% for msg in chat_messages reversed %}
+                        <div class="message {% if msg.is_outgoing %}message-outgoing{% else %}message-incoming{% endif %} {% if msg.is_deleted %}message-deleted{% endif %}" data-msg-id="{{ msg.id }}">
                             <div class="message-bubble">
+                                {% if msg.is_deleted %}
+                                <div class="deleted-badge">
+                                    <i class="bi bi-trash"></i> Deleted
+                                </div>
+                                {% endif %}
+
                                 {% if not msg.is_outgoing and msg.sender_name %}
                                 <div class="message-sender">{{ msg.sender_name }}</div>
                                 {% endif %}
@@ -88,17 +119,40 @@
                         <div class="text-center py-5">
                             <i class="bi bi-chat-dots text-muted" style="font-size: 3rem;"></i>
                             <p class="text-muted mt-3">No messages found</p>
+                            <a href="{% url 'telegram:sync_chat' chat_id %}" class="btn btn-primary">
+                                <i class="bi bi-arrow-repeat"></i> Sync Messages
+                            </a>
                         </div>
                         {% endif %}
                     </div>
                 </div>
 
-                <!-- Load More -->
-                {% if messages|length >= limit %}
-                <div class="card-footer text-center">
-                    <button class="btn btn-outline-primary" id="loadMoreBtn" data-offset="{{ messages.0.id }}">
-                        <i class="bi bi-arrow-down-circle"></i> Load More Messages
-                    </button>
+                <!-- Pagination -->
+                {% if total_pages > 1 %}
+                <div class="card-footer">
+                    <nav aria-label="Message pagination">
+                        <ul class="pagination justify-content-center mb-0">
+                            {% if page > 1 %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page|add:'-1' }}&limit={{ per_page }}{% if show_deleted %}&show_deleted=true{% endif %}">
+                                    <i class="bi bi-chevron-left"></i> Previous
+                                </a>
+                            </li>
+                            {% endif %}
+
+                            <li class="page-item disabled">
+                                <span class="page-link">Page {{ page }} of {{ total_pages }}</span>
+                            </li>
+
+                            {% if page < total_pages %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page|add:'1' }}&limit={{ per_page }}{% if show_deleted %}&show_deleted=true{% endif %}">
+                                    Next <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
                 </div>
                 {% endif %}
             </div>
@@ -144,6 +198,17 @@
     border-bottom-right-radius: 0.25rem;
 }
 
+.message-deleted .message-bubble {
+    background-color: #ffebee;
+    border: 1px dashed #dc3545;
+}
+
+.deleted-badge {
+    font-size: 0.7rem;
+    color: #dc3545;
+    margin-bottom: 0.25rem;
+}
+
 .message-sender {
     font-weight: 600;
     font-size: 0.85rem;
@@ -187,76 +252,17 @@
 }
 </style>
 
-{% block extra_js %}
 <script>
-document.getElementById('loadMoreBtn')?.addEventListener('click', function() {
-    const btn = this;
-    const offsetId = btn.dataset.offset;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Loading...';
-
-    fetch(`{% url 'telegram:load_more_messages' chat_id %}?offset_id=${offsetId}&limit={{ limit }}`, {
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success && data.messages.length > 0) {
-            const container = document.getElementById('messagesContainer');
-
-            data.messages.reverse().forEach(msg => {
-                const msgDiv = document.createElement('div');
-                msgDiv.className = `message ${msg.is_outgoing ? 'message-outgoing' : 'message-incoming'}`;
-                msgDiv.dataset.msgId = msg.id;
-
-                let html = '<div class="message-bubble">';
-
-                if (!msg.is_outgoing && msg.sender_name) {
-                    html += `<div class="message-sender">${msg.sender_name}</div>`;
-                }
-
-                if (msg.has_media) {
-                    html += `<div class="message-media"><i class="bi bi-file-earmark"></i> <span class="text-muted">${msg.media_type}</span></div>`;
-                }
-
-                if (msg.text) {
-                    html += `<div class="message-text">${msg.text.replace(/\n/g, '<br>')}</div>`;
-                }
-
-                const time = msg.date ? msg.date.slice(11, 16) : '';
-                html += `<div class="message-meta"><span class="message-time">${time}</span>`;
-                if (msg.views) {
-                    html += `<span class="message-views"><i class="bi bi-eye"></i> ${msg.views}</span>`;
-                }
-                if (msg.is_outgoing) {
-                    html += '<i class="bi bi-check2-all text-primary"></i>';
-                }
-                html += '</div></div>';
-
-                msgDiv.innerHTML = html;
-                container.insertBefore(msgDiv, container.firstChild);
-            });
-
-            // Update offset for next load
-            btn.dataset.offset = data.messages[data.messages.length - 1].id;
-
-            if (data.messages.length < {{ limit }}) {
-                btn.parentElement.remove();
-            }
-        } else {
-            btn.parentElement.remove();
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Failed to load more messages');
-    })
-    .finally(() => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-arrow-down-circle"></i> Load More Messages';
-    });
-});
+function toggleDeleted() {
+    const checkbox = document.getElementById('showDeleted');
+    const url = new URL(window.location);
+    if (checkbox.checked) {
+        url.searchParams.set('show_deleted', 'true');
+    } else {
+        url.searchParams.delete('show_deleted');
+    }
+    url.searchParams.set('page', '1');
+    window.location = url;
+}
 </script>
-{% endblock %}
 {% endblock %}

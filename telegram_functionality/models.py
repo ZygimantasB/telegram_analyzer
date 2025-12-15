@@ -72,7 +72,11 @@ class TelegramChat(models.Model):
     username = models.CharField(max_length=100, blank=True, null=True)
     members_count = models.IntegerField(null=True, blank=True)
     is_archived = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)
     last_synced = models.DateTimeField(auto_now=True)
+    last_message_id = models.BigIntegerField(null=True, blank=True)
+    last_full_sync = models.DateTimeField(null=True, blank=True)
+    total_messages = models.IntegerField(default=0)
 
     class Meta:
         verbose_name = 'Telegram Chat'
@@ -81,3 +85,43 @@ class TelegramChat(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.chat_type})"
+
+
+class TelegramMessage(models.Model):
+    """Model to store Telegram messages with deletion tracking."""
+
+    chat = models.ForeignKey(
+        TelegramChat,
+        on_delete=models.CASCADE,
+        related_name='messages'
+    )
+    message_id = models.BigIntegerField()
+    text = models.TextField(blank=True, default='')
+    date = models.DateTimeField()
+    sender_id = models.BigIntegerField(null=True, blank=True)
+    sender_name = models.CharField(max_length=255, blank=True, default='')
+    is_outgoing = models.BooleanField(default=False)
+    has_media = models.BooleanField(default=False)
+    media_type = models.CharField(max_length=50, blank=True, null=True)
+    reply_to_msg_id = models.BigIntegerField(null=True, blank=True)
+    forwards = models.IntegerField(null=True, blank=True)
+    views = models.IntegerField(null=True, blank=True)
+
+    # Deletion tracking
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    # Sync tracking
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Telegram Message'
+        verbose_name_plural = 'Telegram Messages'
+        unique_together = ['chat', 'message_id']
+        ordering = ['-date']
+
+    def __str__(self):
+        preview = self.text[:50] + '...' if len(self.text) > 50 else self.text
+        status = ' [DELETED]' if self.is_deleted else ''
+        return f"{self.chat.title}: {preview}{status}"

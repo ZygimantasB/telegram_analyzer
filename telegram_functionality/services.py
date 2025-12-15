@@ -459,6 +459,134 @@ class TelegramClientManager:
 
         return loop.run_until_complete(_get_all_messages())
 
+    def fetch_all_messages_from_chat(self, session_string, chat_id, min_id=0):
+        """Fetch ALL messages from a chat for database storage.
+
+        Args:
+            session_string: Telegram session string
+            chat_id: Chat ID to fetch messages from
+            min_id: Only fetch messages with ID > min_id (for incremental sync)
+
+        Returns:
+            Dict with success, messages list, and total count
+        """
+        loop = self._get_event_loop()
+        client = self.get_client(session_string)
+
+        async def _fetch_all():
+            try:
+                await client.connect()
+                entity = await client.get_entity(chat_id)
+                all_messages = []
+                offset_id = 0
+                batch_size = 100
+
+                while True:
+                    messages = await client.get_messages(
+                        entity,
+                        limit=batch_size,
+                        offset_id=offset_id,
+                        min_id=min_id
+                    )
+
+                    if not messages:
+                        break
+
+                    for msg in messages:
+                        sender_name = ''
+                        sender_id = None
+                        if msg.sender:
+                            sender_id = msg.sender.id
+                            if hasattr(msg.sender, 'first_name'):
+                                sender_name = msg.sender.first_name or ''
+                                if hasattr(msg.sender, 'last_name') and msg.sender.last_name:
+                                    sender_name += ' ' + msg.sender.last_name
+                            elif hasattr(msg.sender, 'title'):
+                                sender_name = msg.sender.title
+
+                        all_messages.append({
+                            'id': msg.id,
+                            'text': msg.text or '',
+                            'date': msg.date,
+                            'sender_id': sender_id,
+                            'sender_name': sender_name,
+                            'is_outgoing': msg.out,
+                            'has_media': msg.media is not None,
+                            'media_type': type(msg.media).__name__ if msg.media else None,
+                            'reply_to_msg_id': msg.reply_to.reply_to_msg_id if msg.reply_to else None,
+                            'forwards': msg.forwards,
+                            'views': msg.views,
+                        })
+
+                    offset_id = messages[-1].id
+
+                    # Safety check to prevent infinite loops
+                    if len(messages) < batch_size:
+                        break
+
+                return {
+                    'success': True,
+                    'messages': all_messages,
+                    'total': len(all_messages)
+                }
+            except Exception as e:
+                return {'success': False, 'error': str(e)}
+            finally:
+                await client.disconnect()
+
+        return loop.run_until_complete(_fetch_all())
+
+    def get_message_ids_from_chat(self, session_string, chat_id, limit=None):
+        """Get all message IDs from a chat (for deletion checking).
+
+        Returns only message IDs to compare against database.
+        """
+        loop = self._get_event_loop()
+        client = self.get_client(session_string)
+
+        async def _get_ids():
+            try:
+                await client.connect()
+                entity = await client.get_entity(chat_id)
+                message_ids = set()
+                offset_id = 0
+                batch_size = 100
+                fetched = 0
+
+                while True:
+                    messages = await client.get_messages(
+                        entity,
+                        limit=batch_size,
+                        offset_id=offset_id
+                    )
+
+                    if not messages:
+                        break
+
+                    for msg in messages:
+                        message_ids.add(msg.id)
+
+                    offset_id = messages[-1].id
+                    fetched += len(messages)
+
+                    if limit and fetched >= limit:
+                        break
+
+                    if len(messages) < batch_size:
+                        break
+
+                return {
+                    'success': True,
+                    'message_ids': message_ids,
+                    'total': len(message_ids)
+                }
+            except Exception as e:
+                return {'success': False, 'error': str(e)}
+            finally:
+                await client.disconnect()
+
+        return loop.run_until_complete(_get_ids())
+
 
 # Singleton instance
 telegram_manager = TelegramClientManager()

@@ -16,4 +16,11 @@ urlpatterns = [
     path('messages/', views.all_messages, name='all_messages'),
     re_path(r'^chats/(?P<chat_id>-?\d+)/$', views.chat_messages, name='chat_messages'),
     re_path(r'^chats/(?P<chat_id>-?\d+)/load-more/$', views.load_more_messages, name='load_more_messages'),
+    # Sync routes
+    path('sync-all/', views.sync_all_chats, name='sync_all'),
+    re_path(r'^sync/(?P<chat_id>-?\d+)/$', views.sync_chat_messages, name='sync_chat'),
+    # Deleted messages
+    path('deleted/', views.deleted_messages, name='deleted_messages'),
+    path('check-deleted/', views.check_deleted_messages, name='check_deleted'),
+    re_path(r'^check-deleted/(?P<chat_id>-?\d+)/$', views.check_deleted_messages, name='check_deleted_chat'),
 ]
