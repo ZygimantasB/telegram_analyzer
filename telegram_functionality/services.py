@@ -388,6 +388,77 @@ class TelegramClientManager:
 
         return loop.run_until_complete(_get_all_chats())
 
+    def get_all_messages(self, session_string, limit_per_chat=10, max_chats=50):
+        """Get recent messages from all chats combined."""
+        loop = self._get_event_loop()
+        client = self.get_client(session_string)
+
+        async def _get_all_messages():
+            try:
+                await client.connect()
+                dialogs = await client.get_dialogs(limit=max_chats)
+                all_messages = []
+
+                for dialog in dialogs:
+                    entity = dialog.entity
+                    chat_type = 'user'
+
+                    if hasattr(entity, 'megagroup') and entity.megagroup:
+                        chat_type = 'supergroup'
+                    elif hasattr(entity, 'broadcast') and entity.broadcast:
+                        chat_type = 'channel'
+                    elif hasattr(entity, 'gigagroup') and entity.gigagroup:
+                        chat_type = 'supergroup'
+                    elif hasattr(entity, 'participants_count'):
+                        chat_type = 'group'
+
+                    chat_title = dialog.title or dialog.name
+
+                    # Get recent messages from this chat
+                    messages = await client.get_messages(entity, limit=limit_per_chat)
+
+                    for msg in messages:
+                        sender_name = ''
+                        sender_id = None
+                        if msg.sender:
+                            sender_id = msg.sender.id
+                            if hasattr(msg.sender, 'first_name'):
+                                sender_name = msg.sender.first_name or ''
+                                if hasattr(msg.sender, 'last_name') and msg.sender.last_name:
+                                    sender_name += ' ' + msg.sender.last_name
+                            elif hasattr(msg.sender, 'title'):
+                                sender_name = msg.sender.title
+
+                        all_messages.append({
+                            'id': msg.id,
+                            'chat_id': dialog.id,
+                            'chat_title': chat_title,
+                            'chat_type': chat_type,
+                            'text': msg.text or '',
+                            'date': msg.date.isoformat() if msg.date else None,
+                            'date_obj': msg.date,
+                            'sender_id': sender_id,
+                            'sender_name': sender_name,
+                            'is_outgoing': msg.out,
+                            'has_media': msg.media is not None,
+                            'media_type': type(msg.media).__name__ if msg.media else None,
+                        })
+
+                # Sort all messages by date (newest first)
+                all_messages.sort(key=lambda x: x['date_obj'] or '', reverse=True)
+
+                # Remove date_obj (not JSON serializable)
+                for msg in all_messages:
+                    del msg['date_obj']
+
+                return {'success': True, 'messages': all_messages, 'total': len(all_messages)}
+            except Exception as e:
+                return {'success': False, 'error': str(e)}
+            finally:
+                await client.disconnect()
+
+        return loop.run_until_complete(_get_all_messages())
+
 
 # Singleton instance
 telegram_manager = TelegramClientManager()

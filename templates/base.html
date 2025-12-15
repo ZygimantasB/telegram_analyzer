@@ -22,14 +22,16 @@
     <!-- Navbar -->
     {% include 'includes/navbar.html' %}
 
-    <!-- Messages -->
+    <!-- Flash Messages (Django messages framework) -->
     {% if messages %}
     <div class="container mt-3">
         {% for message in messages %}
+        {% if message.level is not None %}
         <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
             {{ message }}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
+        {% endif %}
         {% endfor %}
     </div>
     {% endif %}

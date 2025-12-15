@@ -13,6 +13,7 @@ urlpatterns = [
     path('resend-code/', views.resend_code, name='resend_code'),
     # Chat views - using re_path to allow negative chat IDs
     path('chats/', views.chat_list, name='chats'),
+    path('messages/', views.all_messages, name='all_messages'),
     re_path(r'^chats/(?P<chat_id>-?\d+)/$', views.chat_messages, name='chat_messages'),
     re_path(r'^chats/(?P<chat_id>-?\d+)/load-more/$', views.load_more_messages, name='load_more_messages'),
 ]

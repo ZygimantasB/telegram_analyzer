@@ -15,29 +15,34 @@
         </a>
     </div>
 
-    <!-- Filter Tabs -->
-    <ul class="nav nav-pills mb-4">
-        <li class="nav-item">
-            <a class="nav-link {% if current_filter == 'all' %}active{% endif %}" href="?type=all">
-                <i class="bi bi-grid"></i> All ({{ total }})
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link {% if current_filter == 'users' %}active{% endif %}" href="?type=users">
-                <i class="bi bi-person"></i> Private
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link {% if current_filter == 'groups' %}active{% endif %}" href="?type=groups">
-                <i class="bi bi-people"></i> Groups
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link {% if current_filter == 'channels' %}active{% endif %}" href="?type=channels">
-                <i class="bi bi-megaphone"></i> Channels
-            </a>
-        </li>
-    </ul>
+    <!-- View Toggle -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <ul class="nav nav-pills">
+            <li class="nav-item">
+                <a class="nav-link {% if current_filter == 'all' %}active{% endif %}" href="?type=all">
+                    <i class="bi bi-grid"></i> All ({{ total }})
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if current_filter == 'users' %}active{% endif %}" href="?type=users">
+                    <i class="bi bi-person"></i> Private
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if current_filter == 'groups' %}active{% endif %}" href="?type=groups">
+                    <i class="bi bi-people"></i> Groups
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if current_filter == 'channels' %}active{% endif %}" href="?type=channels">
+                    <i class="bi bi-megaphone"></i> Channels
+                </a>
+            </li>
+        </ul>
+        <a href="{% url 'telegram:all_messages' %}" class="btn btn-outline-primary">
+            <i class="bi bi-list-ul"></i> View All Messages
+        </a>
+    </div>
 
     <!-- Chat List -->
     <div class="row">

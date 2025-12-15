@@ -347,3 +347,40 @@ def load_more_messages(request, chat_id):
 
     except TelegramSession.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'No session found'})
+
+
+@login_required
+def all_messages(request):
+    """View all messages from all chats combined."""
+    try:
+        session = request.user.telegram_session
+        if not session.is_active:
+            return redirect('telegram:connect')
+
+        session_string = session.get_session_string()
+
+        # Get parameters
+        limit_per_chat = int(request.GET.get('limit', 5))
+        max_chats = int(request.GET.get('chats', 30))
+
+        result = telegram_manager.get_all_messages(
+            session_string,
+            limit_per_chat=limit_per_chat,
+            max_chats=max_chats
+        )
+
+        if result['success']:
+            context = {
+                'telegram_messages': result['messages'],
+                'total': result['total'],
+                'limit_per_chat': limit_per_chat,
+                'max_chats': max_chats,
+                'session': session,
+            }
+            return render(request, 'telegram_functionality/all_messages.html', context)
+        else:
+            messages.error(request, result.get('error', 'Failed to fetch messages'))
+            return redirect('telegram:dashboard')
+
+    except TelegramSession.DoesNotExist:
+        return redirect('telegram:connect')
