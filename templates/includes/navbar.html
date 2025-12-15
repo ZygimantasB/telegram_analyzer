@@ -21,6 +21,11 @@
                 </li>
                 {% if user.is_authenticated %}
                 <li class="nav-item">
+                    <a class="nav-link" href="{% url 'telegram:dashboard' %}">
+                        <i class="bi bi-telegram"></i> Telegram
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="#">
                         <i class="bi bi-chat-dots"></i> Chats
                     </a>

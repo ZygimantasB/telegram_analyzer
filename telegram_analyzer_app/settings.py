@@ -136,3 +136,7 @@ AUTH_USER_MODEL = 'users.User'
 LOGIN_URL = 'users:login'
 LOGIN_REDIRECT_URL = 'users:profile'
 LOGOUT_REDIRECT_URL = 'users:login'
+
+# Telegram API settings
+TELEGRAM_API_ID = config('TELGRAM_APP_API_ID', cast=int)
+TELEGRAM_API_HASH = config('TELEGRAM_API_HASH')
