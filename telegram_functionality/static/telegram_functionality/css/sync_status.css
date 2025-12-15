@@ -1,0 +1,87 @@
+/* Sync Status Page Styles */
+
+.status-badge {
+    font-size: 0.9rem;
+    padding: 0.5em 1em;
+}
+
+.bg-pending {
+    background-color: #ffc107 !important;
+    color: #000;
+}
+
+.bg-running {
+    background-color: #0d6efd !important;
+}
+
+.bg-completed {
+    background-color: #198754 !important;
+}
+
+.bg-failed {
+    background-color: #dc3545 !important;
+}
+
+.bg-cancelled {
+    background-color: #6c757d !important;
+}
+
+.stat-card {
+    transition: transform 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+}
+
+.log-content {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1rem;
+    margin: 0;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.progress {
+    background-color: #e9ecef;
+}
+
+.progress-bar {
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+#currentActivitySection {
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+}
+
+.pulse-animation {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}

@@ -23,4 +23,10 @@ urlpatterns = [
     path('deleted/', views.deleted_messages, name='deleted_messages'),
     path('check-deleted/', views.check_deleted_messages, name='check_deleted'),
     re_path(r'^check-deleted/(?P<chat_id>-?\d+)/$', views.check_deleted_messages, name='check_deleted_chat'),
+    # Background sync with progress tracking
+    path('start-sync/', views.start_sync, name='start_sync'),
+    path('sync-status/<int:task_id>/', views.sync_status, name='sync_status'),
+    path('sync-progress/<int:task_id>/', views.sync_progress_api, name='sync_progress'),
+    path('cancel-sync/<int:task_id>/', views.cancel_sync, name='cancel_sync'),
+    path('sync-history/', views.sync_history, name='sync_history'),
 ]

@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sync Progress - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'telegram_functionality/css/sync_status.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-arrow-repeat"></i> Sync Progress</h2>
+            <p class="text-muted mb-0">Background sync is running - you can continue browsing</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'telegram:chats' %}" class="btn btn-outline-primary">
+                <i class="bi bi-chat-dots"></i> Chats
+            </a>
+            <a href="{% url 'telegram:sync_history' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-clock-history"></i> History
+            </a>
+            <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Status Card -->
+    <div class="card shadow mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-cloud-download"></i>
+                <span id="taskType">{{ task.get_task_type_display }}</span>
+            </h5>
+            <span id="statusBadge" class="badge bg-{{ task.status }} status-badge">
+                {{ task.get_status_display }}
+            </span>
+        </div>
+        <div class="card-body">
+            <!-- Overall Progress -->
+            <div class="mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold">Overall Progress</span>
+                    <span id="progressText">
+                        <span id="syncedChats">{{ task.synced_chats }}</span> /
+                        <span id="totalChats">{{ task.total_chats }}</span> chats
+                    </span>
+                </div>
+                <div class="progress" style="height: 25px;">
+                    <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar"
+                         style="width: {{ task.progress_percent }}%"
+                         aria-valuenow="{{ task.progress_percent }}"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                        <span id="progressPercent">{{ task.progress_percent }}%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Activity -->
+            <div class="mb-4" id="currentActivitySection">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" id="activitySpinner"></div>
+                    <span class="text-muted">Currently syncing:</span>
+                    <span class="ms-2 fw-bold" id="currentChat">{{ task.current_chat_title|default:"Starting..." }}</span>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="row text-center">
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card bg-light rounded p-3">
+                        <div class="stat-number text-primary" id="totalMessages">{{ task.total_messages }}</div>
+                        <div class="stat-label text-muted">Messages Synced</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card bg-light rounded p-3">
+                        <div class="stat-number text-success" id="newMessages">{{ task.new_messages }}</div>
+                        <div class="stat-label text-muted">New Messages</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card bg-light rounded p-3">
+                        <div class="stat-number text-info" id="syncedChatsCount">{{ task.synced_chats }}</div>
+                        <div class="stat-label text-muted">Chats Synced</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 mb-3">
+                    <div class="stat-card bg-light rounded p-3">
+                        <div class="stat-number" id="elapsedTime">--:--</div>
+                        <div class="stat-label text-muted">Elapsed Time</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="d-flex gap-2 justify-content-center mt-3" id="actionButtons">
+                {% if task.is_running %}
+                <button id="cancelBtn" class="btn btn-danger" onclick="cancelSync()">
+                    <i class="bi bi-x-circle"></i> Cancel Sync
+                </button>
+                {% endif %}
+                {% if task.is_finished %}
+                <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary">
+                    <i class="bi bi-arrow-repeat"></i> Start New Sync
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Error Message -->
+            {% if task.error_message %}
+            <div class="alert alert-danger mt-3" id="errorAlert">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span id="errorMessage">{{ task.error_message }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="card shadow">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-journal-text"></i> Activity Log</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="toggleLog()">
+                <i class="bi bi-chevron-down" id="logToggleIcon"></i>
+            </button>
+        </div>
+        <div class="card-body p-0" id="logContainer">
+            <pre class="log-content" id="logContent">{{ task.log|default:"Waiting to start..." }}</pre>
+        </div>
+    </div>
+
+    <!-- Timestamps -->
+    <div class="text-muted small mt-3 text-center">
+        <span>Started: <span id="startedAt">{{ task.started_at|date:"M d, Y H:i:s"|default:"Pending" }}</span></span>
+        {% if task.completed_at %}
+        <span class="ms-3">Completed: <span id="completedAt">{{ task.completed_at|date:"M d, Y H:i:s" }}</span></span>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    window.SYNC_PROGRESS_URL = '{% url "telegram:sync_progress" task.id %}';
+    window.CANCEL_SYNC_URL = '{% url "telegram:cancel_sync" task.id %}';
+    window.CSRF_TOKEN = '{{ csrf_token }}';
+    window.TASK_STARTED_AT = '{{ task.started_at.isoformat|default:"" }}';
+    window.TASK_IS_FINISHED = {{ task.is_finished|yesno:"true,false" }};
+</script>
+<script src="{% static 'telegram_functionality/js/sync_status.js' %}"></script>
+{% endblock %}

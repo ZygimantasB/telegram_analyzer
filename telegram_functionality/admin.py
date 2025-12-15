@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import TelegramSession, TelegramChat, TelegramMessage
+from .models import TelegramSession, TelegramChat, TelegramMessage, SyncTask
 
 
 @admin.register(TelegramSession)
@@ -63,6 +63,42 @@ class TelegramMessageAdmin(admin.ModelAdmin):
         }),
         ('Sync Info', {
             'fields': ('first_seen_at', 'last_seen_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(SyncTask)
+class SyncTaskAdmin(admin.ModelAdmin):
+    list_display = ('id', 'session', 'task_type', 'status', 'progress_display', 'created_at', 'completed_at')
+    list_filter = ('status', 'task_type', 'created_at')
+    search_fields = ('session__user__email',)
+    readonly_fields = ('created_at', 'started_at', 'completed_at', 'log')
+    ordering = ('-created_at',)
+
+    def progress_display(self, obj):
+        return f"{obj.synced_chats}/{obj.total_chats} chats, {obj.synced_messages} msgs"
+    progress_display.short_description = 'Progress'
+
+    fieldsets = (
+        (None, {
+            'fields': ('session', 'task_type', 'status')
+        }),
+        ('Progress', {
+            'fields': ('total_chats', 'synced_chats', 'total_messages', 'synced_messages', 'new_messages')
+        }),
+        ('Current Activity', {
+            'fields': ('current_chat_id', 'current_chat_title', 'current_chat_progress')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'started_at', 'completed_at')
+        }),
+        ('Error', {
+            'fields': ('error_message',),
+            'classes': ('collapse',)
+        }),
+        ('Log', {
+            'fields': ('log',),
             'classes': ('collapse',)
         }),
     )

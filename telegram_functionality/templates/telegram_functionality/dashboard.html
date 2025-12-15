@@ -8,8 +8,11 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-telegram"></i> Telegram Dashboard</h2>
         <div>
-            <a href="{% url 'telegram:sync_chats' %}" class="btn btn-outline-primary">
-                <i class="bi bi-arrow-repeat"></i> Sync Chats
+            <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary">
+                <i class="bi bi-arrow-repeat"></i> Sync All
+            </a>
+            <a href="{% url 'telegram:chats' %}" class="btn btn-outline-primary">
+                <i class="bi bi-chat-dots"></i> Chats
             </a>
             <form method="post" action="{% url 'telegram:disconnect' %}" class="d-inline">
                 {% csrf_token %}
@@ -111,7 +114,7 @@
                     <div class="text-center py-5">
                         <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
                         <p class="text-muted mt-3">No chats synced yet</p>
-                        <a href="{% url 'telegram:sync_chats' %}" class="btn btn-primary">
+                        <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary">
                             <i class="bi bi-arrow-repeat"></i> Sync Now
                         </a>
                     </div>

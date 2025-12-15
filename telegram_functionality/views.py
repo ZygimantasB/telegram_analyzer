@@ -6,8 +6,8 @@ from django.utils import timezone
 from django.db.models import Q
 
 from .forms import PhoneNumberForm, VerificationCodeForm, TwoFactorForm
-from .models import TelegramSession, TelegramChat, TelegramMessage
-from .services import telegram_manager
+from .models import TelegramSession, TelegramChat, TelegramMessage, SyncTask
+from .services import telegram_manager, start_background_sync
 
 
 @login_required
@@ -728,6 +728,147 @@ def deleted_messages(request):
             'session': session,
         }
         return render(request, 'telegram_functionality/deleted_messages.html', context)
+
+    except TelegramSession.DoesNotExist:
+        return redirect('telegram:connect')
+
+
+@login_required
+def start_sync(request):
+    """Start a new background sync task."""
+    try:
+        session = request.user.telegram_session
+        if not session.is_active:
+            messages.error(request, 'Telegram session not active')
+            return redirect('telegram:connect')
+
+        # Check if there's already a running sync
+        running_sync = SyncTask.objects.filter(
+            session=session,
+            status__in=['pending', 'running']
+        ).first()
+
+        if running_sync:
+            messages.info(request, 'A sync is already in progress.')
+            return redirect('telegram:sync_status', task_id=running_sync.id)
+
+        # Create new sync task
+        sync_task = SyncTask.objects.create(
+            session=session,
+            task_type='sync_all',
+            status='pending'
+        )
+
+        # Start background sync
+        start_background_sync(sync_task)
+
+        messages.success(request, 'Sync started! You can continue browsing while syncing.')
+        return redirect('telegram:sync_status', task_id=sync_task.id)
+
+    except TelegramSession.DoesNotExist:
+        messages.error(request, 'No Telegram session found.')
+        return redirect('telegram:connect')
+
+
+@login_required
+def sync_status(request, task_id):
+    """View sync task status page."""
+    try:
+        session = request.user.telegram_session
+        sync_task = SyncTask.objects.get(id=task_id, session=session)
+
+        # Get recent sync history
+        recent_tasks = SyncTask.objects.filter(
+            session=session
+        ).exclude(id=task_id).order_by('-created_at')[:5]
+
+        context = {
+            'task': sync_task,
+            'recent_tasks': recent_tasks,
+            'session': session,
+        }
+        return render(request, 'telegram_functionality/sync_status.html', context)
+
+    except SyncTask.DoesNotExist:
+        messages.error(request, 'Sync task not found.')
+        return redirect('telegram:dashboard')
+    except TelegramSession.DoesNotExist:
+        return redirect('telegram:connect')
+
+
+@login_required
+def sync_progress_api(request, task_id):
+    """API endpoint to get sync progress (for AJAX polling)."""
+    try:
+        session = request.user.telegram_session
+        sync_task = SyncTask.objects.get(id=task_id, session=session)
+
+        return JsonResponse({
+            'success': True,
+            'status': sync_task.status,
+            'progress_percent': sync_task.progress_percent,
+            'total_chats': sync_task.total_chats,
+            'synced_chats': sync_task.synced_chats,
+            'total_messages': sync_task.total_messages,
+            'synced_messages': sync_task.synced_messages,
+            'new_messages': sync_task.new_messages,
+            'current_chat_title': sync_task.current_chat_title,
+            'current_chat_progress': sync_task.current_chat_progress,
+            'is_running': sync_task.is_running,
+            'is_finished': sync_task.is_finished,
+            'error_message': sync_task.error_message,
+            'log': sync_task.log,
+            'started_at': sync_task.started_at.isoformat() if sync_task.started_at else None,
+            'completed_at': sync_task.completed_at.isoformat() if sync_task.completed_at else None,
+        })
+
+    except SyncTask.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Sync task not found'})
+    except TelegramSession.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'No session found'})
+
+
+@login_required
+def cancel_sync(request, task_id):
+    """Cancel a running sync task."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'})
+
+    try:
+        session = request.user.telegram_session
+        sync_task = SyncTask.objects.get(id=task_id, session=session)
+
+        if sync_task.status in ['pending', 'running']:
+            sync_task.status = 'cancelled'
+            sync_task.completed_at = timezone.now()
+            sync_task.save()
+            sync_task.add_log('Sync cancelled by user')
+
+            return JsonResponse({'success': True, 'message': 'Sync cancelled'})
+        else:
+            return JsonResponse({'success': False, 'error': 'Sync is not running'})
+
+    except SyncTask.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Sync task not found'})
+    except TelegramSession.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'No session found'})
+
+
+@login_required
+def sync_history(request):
+    """View all sync task history."""
+    try:
+        session = request.user.telegram_session
+        if not session.is_active:
+            return redirect('telegram:connect')
+
+        tasks = SyncTask.objects.filter(session=session).order_by('-created_at')
+
+        context = {
+            'tasks': tasks,
+            'session': session,
+        }
+        return render(request, 'telegram_functionality/sync_history.html', context)
 
     except TelegramSession.DoesNotExist:
         return redirect('telegram:connect')

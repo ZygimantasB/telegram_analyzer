@@ -588,5 +588,172 @@ class TelegramClientManager:
         return loop.run_until_complete(_get_ids())
 
 
+def run_background_sync(sync_task_id):
+        """Run sync in background thread with progress updates.
+
+        This function is designed to be called from a separate thread.
+        It updates the SyncTask model with progress as it goes.
+        """
+        import threading
+        from django.utils import timezone
+        from .models import SyncTask, TelegramChat, TelegramMessage
+
+        try:
+            sync_task = SyncTask.objects.get(id=sync_task_id)
+            session = sync_task.session
+            session_string = session.get_session_string()
+
+            # Update status to running
+            sync_task.status = 'running'
+            sync_task.started_at = timezone.now()
+            sync_task.save()
+            sync_task.add_log('Sync started')
+
+            manager = TelegramClientManager()
+
+            # First, get all chats
+            sync_task.add_log('Fetching chat list from Telegram...')
+            chats_result = manager.get_all_chats(session_string)
+
+            if not chats_result['success']:
+                sync_task.status = 'failed'
+                sync_task.error_message = chats_result.get('error', 'Failed to fetch chats')
+                sync_task.completed_at = timezone.now()
+                sync_task.save()
+                return
+
+            chats = chats_result['chats']
+            sync_task.total_chats = len(chats)
+            sync_task.save()
+            sync_task.add_log(f'Found {len(chats)} chats')
+
+            # Sync each chat
+            for i, chat_data in enumerate(chats):
+                # Check if task was cancelled
+                sync_task.refresh_from_db()
+                if sync_task.status == 'cancelled':
+                    sync_task.add_log('Sync cancelled by user')
+                    sync_task.completed_at = timezone.now()
+                    sync_task.save()
+                    return
+
+                chat_id = chat_data['id']
+                chat_title = chat_data['title']
+
+                # Update current chat info
+                sync_task.current_chat_id = chat_id
+                sync_task.current_chat_title = chat_title
+                sync_task.current_chat_progress = 0
+                sync_task.save()
+                sync_task.add_log(f'Syncing chat: {chat_title}')
+
+                # Get or create TelegramChat
+                telegram_chat, created = TelegramChat.objects.get_or_create(
+                    session=session,
+                    chat_id=chat_id,
+                    defaults={
+                        'chat_type': chat_data['type'],
+                        'title': chat_title,
+                        'username': chat_data.get('username'),
+                        'members_count': chat_data.get('members_count'),
+                        'is_archived': chat_data.get('is_archived', False),
+                        'is_pinned': chat_data.get('is_pinned', False),
+                    }
+                )
+
+                if not created:
+                    # Update existing chat info
+                    telegram_chat.title = chat_title
+                    telegram_chat.chat_type = chat_data['type']
+                    telegram_chat.username = chat_data.get('username')
+                    telegram_chat.members_count = chat_data.get('members_count')
+                    telegram_chat.is_archived = chat_data.get('is_archived', False)
+                    telegram_chat.is_pinned = chat_data.get('is_pinned', False)
+                    telegram_chat.save()
+
+                # Fetch messages for this chat
+                min_id = telegram_chat.last_message_id or 0
+                messages_result = manager.fetch_all_messages_from_chat(
+                    session_string,
+                    chat_id,
+                    min_id=min_id
+                )
+
+                if messages_result['success']:
+                    messages = messages_result['messages']
+                    new_count = 0
+
+                    for msg_data in messages:
+                        msg_obj, msg_created = TelegramMessage.objects.get_or_create(
+                            chat=telegram_chat,
+                            message_id=msg_data['id'],
+                            defaults={
+                                'text': msg_data['text'],
+                                'date': msg_data['date'],
+                                'sender_id': msg_data['sender_id'],
+                                'sender_name': msg_data['sender_name'],
+                                'is_outgoing': msg_data['is_outgoing'],
+                                'has_media': msg_data['has_media'],
+                                'media_type': msg_data['media_type'],
+                                'reply_to_msg_id': msg_data['reply_to_msg_id'],
+                                'forwards': msg_data['forwards'],
+                                'views': msg_data['views'],
+                            }
+                        )
+                        if msg_created:
+                            new_count += 1
+
+                    # Update chat stats
+                    if messages:
+                        max_msg_id = max(m['id'] for m in messages)
+                        telegram_chat.last_message_id = max_msg_id
+                    telegram_chat.total_messages = telegram_chat.messages.count()
+                    telegram_chat.last_full_sync = timezone.now()
+                    telegram_chat.save()
+
+                    # Update sync task progress
+                    sync_task.synced_messages += len(messages)
+                    sync_task.new_messages += new_count
+                    sync_task.total_messages += len(messages)
+                    sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new)')
+                else:
+                    sync_task.add_log(f'  - Error: {messages_result.get("error", "Unknown error")}')
+
+                # Update synced chats count
+                sync_task.synced_chats = i + 1
+                sync_task.save()
+
+            # Complete
+            sync_task.status = 'completed'
+            sync_task.completed_at = timezone.now()
+            sync_task.current_chat_id = None
+            sync_task.current_chat_title = ''
+            sync_task.save()
+            sync_task.add_log(f'Sync completed! {sync_task.synced_messages} messages from {sync_task.synced_chats} chats')
+
+        except Exception as e:
+            try:
+                sync_task = SyncTask.objects.get(id=sync_task_id)
+                sync_task.status = 'failed'
+                sync_task.error_message = str(e)
+                sync_task.completed_at = timezone.now()
+                sync_task.save()
+                sync_task.add_log(f'Error: {str(e)}')
+            except:
+                pass
+
+
+def start_background_sync(sync_task):
+    """Start the sync in a background thread."""
+    import threading
+    thread = threading.Thread(
+        target=run_background_sync,
+        args=(sync_task.id,),
+        daemon=True
+    )
+    thread.start()
+    return thread
+
+
 # Singleton instance
 telegram_manager = TelegramClientManager()

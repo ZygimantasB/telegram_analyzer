@@ -87,6 +87,85 @@ class TelegramChat(models.Model):
         return f"{self.title} ({self.chat_type})"
 
 
+class SyncTask(models.Model):
+    """Model to track background sync tasks and their progress."""
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    TASK_TYPES = [
+        ('sync_all', 'Sync All Chats'),
+        ('sync_chat', 'Sync Single Chat'),
+        ('check_deleted', 'Check Deleted Messages'),
+    ]
+
+    session = models.ForeignKey(
+        TelegramSession,
+        on_delete=models.CASCADE,
+        related_name='sync_tasks'
+    )
+    task_type = models.CharField(max_length=20, choices=TASK_TYPES, default='sync_all')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    # Progress tracking
+    total_chats = models.IntegerField(default=0)
+    synced_chats = models.IntegerField(default=0)
+    total_messages = models.IntegerField(default=0)
+    synced_messages = models.IntegerField(default=0)
+    new_messages = models.IntegerField(default=0)
+
+    # Current activity
+    current_chat_id = models.BigIntegerField(null=True, blank=True)
+    current_chat_title = models.CharField(max_length=255, blank=True, default='')
+    current_chat_progress = models.IntegerField(default=0)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Error tracking
+    error_message = models.TextField(blank=True, default='')
+
+    # Log of activities
+    log = models.TextField(blank=True, default='')
+
+    class Meta:
+        verbose_name = 'Sync Task'
+        verbose_name_plural = 'Sync Tasks'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_task_type_display()} - {self.status} ({self.created_at})"
+
+    def add_log(self, message):
+        """Add a log entry with timestamp."""
+        from django.utils import timezone
+        timestamp = timezone.now().strftime('%H:%M:%S')
+        self.log += f"[{timestamp}] {message}\n"
+        self.save(update_fields=['log'])
+
+    @property
+    def progress_percent(self):
+        """Calculate overall progress percentage."""
+        if self.total_chats == 0:
+            return 0
+        return int((self.synced_chats / self.total_chats) * 100)
+
+    @property
+    def is_running(self):
+        return self.status == 'running'
+
+    @property
+    def is_finished(self):
+        return self.status in ['completed', 'failed', 'cancelled']
+
+
 class TelegramMessage(models.Model):
     """Model to store Telegram messages with deletion tracking."""
 

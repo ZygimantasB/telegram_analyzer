@@ -16,8 +16,11 @@
             <p class="text-muted mb-0">{{ total }} total conversations</p>
         </div>
         <div class="d-flex gap-2">
-            <a href="{% url 'telegram:sync_all' %}" class="btn btn-primary">
+            <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary">
                 <i class="bi bi-arrow-repeat"></i> Sync All
+            </a>
+            <a href="{% url 'telegram:sync_history' %}" class="btn btn-outline-info">
+                <i class="bi bi-clock-history"></i> History
             </a>
             <a href="{% url 'telegram:deleted_messages' %}" class="btn btn-outline-danger">
                 <i class="bi bi-trash"></i> Deleted
@@ -119,7 +122,7 @@
                     {% endif %}
                 </p>
                 {% if needs_sync %}
-                <a href="{% url 'telegram:sync_all' %}" class="btn btn-primary mt-2">
+                <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary mt-2">
                     <i class="bi bi-arrow-repeat"></i> Sync All Chats
                 </a>
                 {% endif %}
