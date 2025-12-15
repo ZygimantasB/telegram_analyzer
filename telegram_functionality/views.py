@@ -292,6 +292,7 @@ def chat_list(request):
 @login_required
 def chat_messages(request, chat_id):
     """View messages from a specific chat."""
+    chat_id = int(chat_id)  # Convert from string (re_path passes as string)
     try:
         session = request.user.telegram_session
         if not session.is_active:
@@ -331,6 +332,7 @@ def chat_messages(request, chat_id):
 @login_required
 def load_more_messages(request, chat_id):
     """Load more messages (AJAX endpoint)."""
+    chat_id = int(chat_id)  # Convert from string (re_path passes as string)
     try:
         session = request.user.telegram_session
         if not session.is_active:

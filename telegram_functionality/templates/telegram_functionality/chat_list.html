@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}My Chats - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-chat-dots"></i> My Chats</h2>
+            <p class="text-muted mb-0">{{ total }} total conversations</p>
+        </div>
+        <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <!-- Filter Tabs -->
+    <ul class="nav nav-pills mb-4">
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'all' %}active{% endif %}" href="?type=all">
+                <i class="bi bi-grid"></i> All ({{ total }})
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'users' %}active{% endif %}" href="?type=users">
+                <i class="bi bi-person"></i> Private
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'groups' %}active{% endif %}" href="?type=groups">
+                <i class="bi bi-people"></i> Groups
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_filter == 'channels' %}active{% endif %}" href="?type=channels">
+                <i class="bi bi-megaphone"></i> Channels
+            </a>
+        </li>
+    </ul>
+
+    <!-- Chat List -->
+    <div class="row">
+        {% for chat in chats %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <a href="{% url 'telegram:chat_messages' chat.id %}" class="text-decoration-none">
+                <div class="card h-100 chat-card">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start">
+                            <div class="flex-shrink-0 me-3">
+                                {% if chat.type == 'channel' %}
+                                <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                    <i class="bi bi-megaphone text-white"></i>
+                                </div>
+                                {% elif chat.type == 'supergroup' or chat.type == 'group' %}
+                                <div class="bg-success rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                    <i class="bi bi-people text-white"></i>
+                                </div>
+                                {% else %}
+                                <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                    <i class="bi bi-person text-white"></i>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="flex-grow-1 min-width-0">
+                                <h6 class="mb-1 text-truncate text-dark">{{ chat.title }}</h6>
+                                <small class="text-muted">
+                                    {% if chat.username %}@{{ chat.username }} &bull; {% endif %}
+                                    {{ chat.type|title }}
+                                    {% if chat.members_count %} &bull; {{ chat.members_count }} members{% endif %}
+                                </small>
+                                {% if chat.last_message %}
+                                <p class="text-muted small mb-0 mt-2 text-truncate">
+                                    {{ chat.last_message.text|default:"Media message" }}
+                                </p>
+                                {% endif %}
+                            </div>
+                            <div class="flex-shrink-0 ms-2">
+                                {% if chat.unread_count > 0 %}
+                                <span class="badge bg-primary rounded-pill">{{ chat.unread_count }}</span>
+                                {% endif %}
+                                {% if chat.is_pinned %}
+                                <i class="bi bi-pin-angle text-warning"></i>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
+                <h4 class="mt-3 text-muted">No chats found</h4>
+                <p class="text-muted">Try changing the filter or sync your chats</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<style>
+.chat-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+.chat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.min-width-0 {
+    min-width: 0;
+}
+</style>
+{% endblock %}

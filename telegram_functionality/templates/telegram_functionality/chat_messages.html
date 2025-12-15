@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ chat.title }} - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Chat Header -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-body py-2">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center">
+                            <a href="{% url 'telegram:chats' %}" class="btn btn-link text-secondary me-2">
+                                <i class="bi bi-arrow-left"></i>
+                            </a>
+                            {% if chat.type == 'channel' %}
+                            <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 45px; height: 45px;">
+                                <i class="bi bi-megaphone text-white"></i>
+                            </div>
+                            {% elif chat.type == 'supergroup' or chat.type == 'group' %}
+                            <div class="bg-success rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 45px; height: 45px;">
+                                <i class="bi bi-people text-white"></i>
+                            </div>
+                            {% else %}
+                            <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 45px; height: 45px;">
+                                <i class="bi bi-person text-white"></i>
+                            </div>
+                            {% endif %}
+                            <div>
+                                <h5 class="mb-0">{{ chat.title }}</h5>
+                                <small class="text-muted">
+                                    {{ chat.type|title }}
+                                    {% if chat.username %} &bull; @{{ chat.username }}{% endif %}
+                                    {% if chat.members_count %} &bull; {{ chat.members_count }} members{% endif %}
+                                </small>
+                            </div>
+                        </div>
+                        <div>
+                            <span class="badge bg-secondary">{{ messages|length }} messages loaded</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="card shadow">
+                <div class="card-body p-0">
+                    <div class="messages-container" id="messagesContainer">
+                        {% if messages %}
+                        {% for msg in messages reversed %}
+                        <div class="message {% if msg.is_outgoing %}message-outgoing{% else %}message-incoming{% endif %}" data-msg-id="{{ msg.id }}">
+                            <div class="message-bubble">
+                                {% if not msg.is_outgoing and msg.sender_name %}
+                                <div class="message-sender">{{ msg.sender_name }}</div>
+                                {% endif %}
+
+                                {% if msg.reply_to_msg_id %}
+                                <div class="message-reply">
+                                    <i class="bi bi-reply"></i> Reply to message
+                                </div>
+                                {% endif %}
+
+                                {% if msg.has_media %}
+                                <div class="message-media">
+                                    <i class="bi bi-file-earmark"></i>
+                                    <span class="text-muted">{{ msg.media_type }}</span>
+                                </div>
+                                {% endif %}
+
+                                {% if msg.text %}
+                                <div class="message-text">{{ msg.text|linebreaksbr }}</div>
+                                {% endif %}
+
+                                <div class="message-meta">
+                                    <span class="message-time">{{ msg.date|slice:":16"|slice:"11:" }}</span>
+                                    {% if msg.views %}
+                                    <span class="message-views"><i class="bi bi-eye"></i> {{ msg.views }}</span>
+                                    {% endif %}
+                                    {% if msg.is_outgoing %}
+                                    <i class="bi bi-check2-all text-primary"></i>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-chat-dots text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-3">No messages found</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Load More -->
+                {% if messages|length >= limit %}
+                <div class="card-footer text-center">
+                    <button class="btn btn-outline-primary" id="loadMoreBtn" data-offset="{{ messages.0.id }}">
+                        <i class="bi bi-arrow-down-circle"></i> Load More Messages
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.messages-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.message {
+    max-width: 75%;
+    margin-bottom: 0.75rem;
+}
+
+.message-incoming {
+    align-self: flex-start;
+}
+
+.message-outgoing {
+    align-self: flex-end;
+}
+
+.message-bubble {
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem;
+    position: relative;
+}
+
+.message-incoming .message-bubble {
+    background-color: #f1f3f4;
+    border-bottom-left-radius: 0.25rem;
+}
+
+.message-outgoing .message-bubble {
+    background-color: #dcf8c6;
+    border-bottom-right-radius: 0.25rem;
+}
+
+.message-sender {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #075e54;
+    margin-bottom: 0.25rem;
+}
+
+.message-text {
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.message-meta {
+    font-size: 0.7rem;
+    color: #667781;
+    text-align: right;
+    margin-top: 0.25rem;
+}
+
+.message-time {
+    margin-right: 0.5rem;
+}
+
+.message-views {
+    margin-right: 0.5rem;
+}
+
+.message-reply {
+    font-size: 0.8rem;
+    color: #667781;
+    border-left: 3px solid #25d366;
+    padding-left: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.message-media {
+    background: rgba(0,0,0,0.05);
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+</style>
+
+{% block extra_js %}
+<script>
+document.getElementById('loadMoreBtn')?.addEventListener('click', function() {
+    const btn = this;
+    const offsetId = btn.dataset.offset;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Loading...';
+
+    fetch(`{% url 'telegram:load_more_messages' chat_id %}?offset_id=${offsetId}&limit={{ limit }}`, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.messages.length > 0) {
+            const container = document.getElementById('messagesContainer');
+
+            data.messages.reverse().forEach(msg => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `message ${msg.is_outgoing ? 'message-outgoing' : 'message-incoming'}`;
+                msgDiv.dataset.msgId = msg.id;
+
+                let html = '<div class="message-bubble">';
+
+                if (!msg.is_outgoing && msg.sender_name) {
+                    html += `<div class="message-sender">${msg.sender_name}</div>`;
+                }
+
+                if (msg.has_media) {
+                    html += `<div class="message-media"><i class="bi bi-file-earmark"></i> <span class="text-muted">${msg.media_type}</span></div>`;
+                }
+
+                if (msg.text) {
+                    html += `<div class="message-text">${msg.text.replace(/\n/g, '<br>')}</div>`;
+                }
+
+                const time = msg.date ? msg.date.slice(11, 16) : '';
+                html += `<div class="message-meta"><span class="message-time">${time}</span>`;
+                if (msg.views) {
+                    html += `<span class="message-views"><i class="bi bi-eye"></i> ${msg.views}</span>`;
+                }
+                if (msg.is_outgoing) {
+                    html += '<i class="bi bi-check2-all text-primary"></i>';
+                }
+                html += '</div></div>';
+
+                msgDiv.innerHTML = html;
+                container.insertBefore(msgDiv, container.firstChild);
+            });
+
+            // Update offset for next load
+            btn.dataset.offset = data.messages[data.messages.length - 1].id;
+
+            if (data.messages.length < {{ limit }}) {
+                btn.parentElement.remove();
+            }
+        } else {
+            btn.parentElement.remove();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to load more messages');
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-down-circle"></i> Load More Messages';
+    });
+});
+</script>
+{% endblock %}
+{% endblock %}
