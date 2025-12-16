@@ -9,22 +9,38 @@ from .forms import PhoneNumberForm, VerificationCodeForm, TwoFactorForm
 from .models import TelegramSession, TelegramChat, TelegramMessage, SyncTask
 from .services import telegram_manager, start_background_sync
 
+# Logging imports
+from telegram_analyzer_app.logging_utils import (
+    telegram_views_logger as logger,
+    security_logger,
+    log_view,
+    log_user_action,
+    log_security_event,
+    log_telegram_connection,
+    get_client_ip,
+)
+
 
 @login_required
+@log_view()
 def telegram_connect(request):
     """View to start Telegram connection process."""
+    logger.debug(f"telegram_connect called by user {request.user.id}")
+
     # Check if user already has an active session
     try:
         session = request.user.telegram_session
         if session.is_active:
+            logger.info(f"User {request.user.id} already has active session, redirecting to dashboard")
             return redirect('telegram:dashboard')
     except TelegramSession.DoesNotExist:
-        pass
+        logger.debug(f"No existing session for user {request.user.id}")
 
     if request.method == 'POST':
         form = PhoneNumberForm(request.POST)
         if form.is_valid():
             phone_number = form.cleaned_data['phone_number']
+            logger.info(f"User {request.user.id} requesting verification code for phone: {phone_number[:4]}****")
 
             # Send verification code
             result = telegram_manager.send_code(phone_number)
@@ -34,9 +50,14 @@ def telegram_connect(request):
                 request.session['telegram_phone'] = phone_number
                 request.session['telegram_phone_code_hash'] = result['phone_code_hash']
                 request.session['telegram_session_string'] = result['session_string']
+                log_telegram_connection(request.user, phone_number, "code_sent")
+                logger.info(f"Verification code sent successfully for user {request.user.id}")
                 return redirect('telegram:verify_code')
             else:
-                messages.error(request, result.get('error', 'Failed to send code'))
+                error_msg = result.get('error', 'Failed to send code')
+                logger.warning(f"Failed to send verification code for user {request.user.id}: {error_msg}")
+                log_security_event("telegram_code_failed", request.user, get_client_ip(request), error_msg)
+                messages.error(request, error_msg)
     else:
         form = PhoneNumberForm()
 
@@ -44,10 +65,14 @@ def telegram_connect(request):
 
 
 @login_required
+@log_view()
 def verify_code(request):
     """View to verify the code sent to phone."""
+    logger.debug(f"verify_code called by user {request.user.id}")
+
     # Check if we have the required session data
     if 'telegram_phone' not in request.session:
+        logger.warning(f"User {request.user.id} attempted verify_code without phone in session")
         messages.error(request, 'Please enter your phone number first.')
         return redirect('telegram:connect')
 
@@ -57,6 +82,7 @@ def verify_code(request):
         form = VerificationCodeForm(request.POST)
         if form.is_valid():
             code = form.cleaned_data['code']
+            logger.info(f"User {request.user.id} attempting to verify code")
 
             result = telegram_manager.verify_code(
                 session_string=request.session['telegram_session_string'],
@@ -68,16 +94,23 @@ def verify_code(request):
             if result['success']:
                 if result.get('requires_2fa'):
                     # User has 2FA enabled
+                    logger.info(f"User {request.user.id} requires 2FA verification")
                     request.session['telegram_session_string'] = result['session_string']
                     return redirect('telegram:verify_2fa')
                 else:
                     # Successfully logged in
                     _save_telegram_session(request, result)
                     _clear_telegram_session_data(request)
+                    log_telegram_connection(request.user, phone_number, "connected", f"Telegram User ID: {result.get('user_id')}")
+                    log_user_action(request.user, "telegram_connected", f"Phone: {phone_number[:4]}****")
+                    logger.info(f"User {request.user.id} successfully connected to Telegram")
                     messages.success(request, 'Successfully connected to Telegram!')
                     return redirect('telegram:dashboard')
             else:
-                messages.error(request, result.get('error', 'Verification failed'))
+                error_msg = result.get('error', 'Verification failed')
+                logger.warning(f"Code verification failed for user {request.user.id}: {error_msg}")
+                log_security_event("telegram_verify_failed", request.user, get_client_ip(request), error_msg)
+                messages.error(request, error_msg)
     else:
         form = VerificationCodeForm()
 
@@ -88,9 +121,13 @@ def verify_code(request):
 
 
 @login_required
+@log_view()
 def verify_2fa(request):
     """View to verify 2FA password."""
+    logger.debug(f"verify_2fa called by user {request.user.id}")
+
     if 'telegram_session_string' not in request.session:
+        logger.warning(f"User {request.user.id} attempted verify_2fa without session string")
         messages.error(request, 'Please start the connection process again.')
         return redirect('telegram:connect')
 
@@ -98,6 +135,7 @@ def verify_2fa(request):
         form = TwoFactorForm(request.POST)
         if form.is_valid():
             password = form.cleaned_data['password']
+            logger.info(f"User {request.user.id} attempting 2FA verification")
 
             result = telegram_manager.verify_2fa(
                 session_string=request.session['telegram_session_string'],
@@ -107,10 +145,17 @@ def verify_2fa(request):
             if result['success']:
                 _save_telegram_session(request, result)
                 _clear_telegram_session_data(request)
+                phone_number = request.session.get('telegram_phone', 'unknown')
+                log_telegram_connection(request.user, phone_number, "connected_2fa", f"Telegram User ID: {result.get('user_id')}")
+                log_user_action(request.user, "telegram_connected_2fa")
+                logger.info(f"User {request.user.id} successfully connected to Telegram via 2FA")
                 messages.success(request, 'Successfully connected to Telegram!')
                 return redirect('telegram:dashboard')
             else:
-                messages.error(request, result.get('error', '2FA verification failed'))
+                error_msg = result.get('error', '2FA verification failed')
+                logger.warning(f"2FA verification failed for user {request.user.id}: {error_msg}")
+                log_security_event("telegram_2fa_failed", request.user, get_client_ip(request), error_msg)
+                messages.error(request, error_msg)
     else:
         form = TwoFactorForm()
 
@@ -734,11 +779,15 @@ def deleted_messages(request):
 
 
 @login_required
+@log_view()
 def start_sync(request):
     """Start a new background sync task."""
+    logger.info(f"User {request.user.id} initiating background sync")
+
     try:
         session = request.user.telegram_session
         if not session.is_active:
+            logger.warning(f"User {request.user.id} attempted sync with inactive session")
             messages.error(request, 'Telegram session not active')
             return redirect('telegram:connect')
 
@@ -749,6 +798,7 @@ def start_sync(request):
         ).first()
 
         if running_sync:
+            logger.info(f"User {request.user.id} has existing sync in progress: Task #{running_sync.id}")
             messages.info(request, 'A sync is already in progress.')
             return redirect('telegram:sync_status', task_id=running_sync.id)
 
@@ -758,14 +808,18 @@ def start_sync(request):
             task_type='sync_all',
             status='pending'
         )
+        logger.info(f"Created SyncTask #{sync_task.id} for user {request.user.id}")
+        log_user_action(request.user, "sync_started", f"Task ID: {sync_task.id}")
 
         # Start background sync
         start_background_sync(sync_task)
+        logger.info(f"Background sync started for Task #{sync_task.id}")
 
         messages.success(request, 'Sync started! You can continue browsing while syncing.')
         return redirect('telegram:sync_status', task_id=sync_task.id)
 
     except TelegramSession.DoesNotExist:
+        logger.error(f"User {request.user.id} has no Telegram session")
         messages.error(request, 'No Telegram session found.')
         return redirect('telegram:connect')
 

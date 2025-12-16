@@ -140,3 +140,259 @@ LOGOUT_REDIRECT_URL = 'users:login'
 # Telegram API settings
 TELEGRAM_API_ID = config('TELGRAM_APP_API_ID', cast=int)
 TELEGRAM_API_HASH = config('TELEGRAM_API_HASH')
+
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+# Create logs directory if it doesn't exist
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+(LOGS_DIR / 'telegram').mkdir(exist_ok=True)
+(LOGS_DIR / 'users').mkdir(exist_ok=True)
+(LOGS_DIR / 'django').mkdir(exist_ok=True)
+(LOGS_DIR / 'security').mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+
+    # ==========================================================================
+    # FORMATTERS - Define how log messages are formatted
+    # ==========================================================================
+    'formatters': {
+        # Verbose formatter - includes all details
+        'verbose': {
+            'format': '[{asctime}] {levelname} [{name}:{lineno}] {funcName}() - {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        # Simple formatter - for console output
+        'simple': {
+            'format': '[{asctime}] {levelname} - {message}',
+            'style': '{',
+            'datefmt': '%H:%M:%S',
+        },
+        # Detailed formatter - for file logging with extra context
+        'detailed': {
+            'format': '[{asctime}] {levelname} [{name}:{lineno}] [{funcName}] [PID:{process}] [TID:{thread}]\n'
+                      'Message: {message}\n'
+                      '--------------------------------------------------------------------------------',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        # JSON formatter for structured logging
+        'json': {
+            'format': '{{"timestamp": "{asctime}", "level": "{levelname}", "logger": "{name}", '
+                      '"function": "{funcName}", "line": {lineno}, "message": "{message}"}}',
+            'style': '{',
+            'datefmt': '%Y-%m-%dT%H:%M:%S',
+        },
+    },
+
+    # ==========================================================================
+    # FILTERS - Control which log records are processed
+    # ==========================================================================
+    'filters': {
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+    },
+
+    # ==========================================================================
+    # HANDLERS - Define where log messages go
+    # ==========================================================================
+    'handlers': {
+        # Console handler - colored output for development
+        'console': {
+            'level': 'DEBUG',
+            'filters': ['require_debug_true'],
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+
+        # Console handler for production (warnings and above)
+        'console_prod': {
+            'level': 'WARNING',
+            'filters': ['require_debug_false'],
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+
+        # Django general log file
+        'django_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'django' / 'django.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+
+        # Django error log file
+        'django_error_file': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'django' / 'errors.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 10,
+            'formatter': 'detailed',
+            'encoding': 'utf-8',
+        },
+
+        # Telegram app log file
+        'telegram_file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'telegram' / 'telegram.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+
+        # Telegram sync operations log
+        'telegram_sync_file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'telegram' / 'sync.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+
+        # Telegram API operations log
+        'telegram_api_file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'telegram' / 'api.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+
+        # Users app log file
+        'users_file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'users' / 'users.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+
+        # Security log file (authentication, permissions, etc.)
+        'security_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'security' / 'security.log',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+
+        # Mail admins on errors (production)
+        'mail_admins': {
+            'level': 'ERROR',
+            'filters': ['require_debug_false'],
+            'class': 'django.utils.log.AdminEmailHandler',
+            'formatter': 'verbose',
+        },
+    },
+
+    # ==========================================================================
+    # LOGGERS - Configure logging for specific parts of the application
+    # ==========================================================================
+    'loggers': {
+        # Root logger
+        'root': {
+            'handlers': ['console', 'console_prod', 'django_file'],
+            'level': 'INFO',
+        },
+
+        # Django framework logging
+        'django': {
+            'handlers': ['console', 'django_file', 'django_error_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+
+        # Django request logging
+        'django.request': {
+            'handlers': ['django_file', 'django_error_file', 'mail_admins'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+
+        # Django database queries (set to WARNING to reduce noise)
+        'django.db.backends': {
+            'handlers': ['console', 'django_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+
+        # Django security logging
+        'django.security': {
+            'handlers': ['security_file', 'django_error_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+
+        # Telegram functionality app
+        'telegram_functionality': {
+            'handlers': ['console', 'telegram_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+
+        # Telegram views
+        'telegram_functionality.views': {
+            'handlers': ['console', 'telegram_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+
+        # Telegram services (API calls)
+        'telegram_functionality.services': {
+            'handlers': ['console', 'telegram_api_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+
+        # Telegram sync operations
+        'telegram_functionality.sync': {
+            'handlers': ['console', 'telegram_sync_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+
+        # Users app
+        'users': {
+            'handlers': ['console', 'users_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+
+        # Users views
+        'users.views': {
+            'handlers': ['console', 'users_file', 'security_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+
+        # Security events (custom logger for auth events)
+        'security': {
+            'handlers': ['console', 'security_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}

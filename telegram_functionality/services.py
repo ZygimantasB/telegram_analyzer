@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -10,6 +11,10 @@ from telethon.errors import (
 )
 from django.conf import settings
 
+# Configure logger for this module
+logger = logging.getLogger('telegram_functionality.services')
+sync_logger = logging.getLogger('telegram_functionality.sync')
+
 
 class TelegramClientManager:
     """Manager class for handling Telethon client operations."""
@@ -18,6 +23,7 @@ class TelegramClientManager:
         self.api_id = settings.TELEGRAM_API_ID
         self.api_hash = settings.TELEGRAM_API_HASH
         self._clients = {}
+        logger.debug("TelegramClientManager initialized")
 
     def _get_event_loop(self):
         """Get or create event loop."""
@@ -47,32 +53,39 @@ class TelegramClientManager:
 
     def send_code(self, phone_number):
         """Synchronous wrapper to send verification code."""
+        logger.info(f"API CALL: send_code - phone: {phone_number[:4]}****")
         loop = self._get_event_loop()
         client = self.get_client()
 
         async def _send():
             try:
+                logger.debug("Connecting to Telegram...")
                 await client.connect()
+                logger.debug("Sending code request...")
                 result = await client.send_code_request(phone_number)
                 session_string = client.session.save()
+                logger.info(f"Code sent successfully to {phone_number[:4]}****")
                 return {
                     'success': True,
                     'phone_code_hash': result.phone_code_hash,
                     'session_string': session_string,
                 }
             except FloodWaitError as e:
+                logger.warning(f"FloodWaitError: Need to wait {e.seconds} seconds")
                 return {
                     'success': False,
                     'error': f'Too many attempts. Please wait {e.seconds} seconds.',
                     'flood_wait': e.seconds,
                 }
             except Exception as e:
+                logger.error(f"Error sending code: {type(e).__name__}: {str(e)}")
                 return {
                     'success': False,
                     'error': str(e),
                 }
             finally:
                 await client.disconnect()
+                logger.debug("Disconnected from Telegram")
 
         return loop.run_until_complete(_send())
 
@@ -598,10 +611,13 @@ def run_background_sync(sync_task_id):
         from django.utils import timezone
         from .models import SyncTask, TelegramChat, TelegramMessage
 
+        sync_logger.info(f"BACKGROUND SYNC STARTED: Task #{sync_task_id}")
+
         try:
             sync_task = SyncTask.objects.get(id=sync_task_id)
             session = sync_task.session
             session_string = session.get_session_string()
+            sync_logger.info(f"Task #{sync_task_id}: Retrieved session for user {session.user_id}")
 
             # Update status to running
             sync_task.status = 'running'
@@ -616,8 +632,10 @@ def run_background_sync(sync_task_id):
             chats_result = manager.get_all_chats(session_string)
 
             if not chats_result['success']:
+                error_msg = chats_result.get('error', 'Failed to fetch chats')
+                sync_logger.error(f"Task #{sync_task_id}: Failed to fetch chats - {error_msg}")
                 sync_task.status = 'failed'
-                sync_task.error_message = chats_result.get('error', 'Failed to fetch chats')
+                sync_task.error_message = error_msg
                 sync_task.completed_at = timezone.now()
                 sync_task.save()
                 return
@@ -626,12 +644,14 @@ def run_background_sync(sync_task_id):
             sync_task.total_chats = len(chats)
             sync_task.save()
             sync_task.add_log(f'Found {len(chats)} chats')
+            sync_logger.info(f"Task #{sync_task_id}: Found {len(chats)} chats to sync")
 
             # Sync each chat
             for i, chat_data in enumerate(chats):
                 # Check if task was cancelled
                 sync_task.refresh_from_db()
                 if sync_task.status == 'cancelled':
+                    sync_logger.info(f"Task #{sync_task_id}: Cancelled by user at chat {i+1}/{len(chats)}")
                     sync_task.add_log('Sync cancelled by user')
                     sync_task.completed_at = timezone.now()
                     sync_task.save()
@@ -639,6 +659,7 @@ def run_background_sync(sync_task_id):
 
                 chat_id = chat_data['id']
                 chat_title = chat_data['title']
+                sync_logger.debug(f"Task #{sync_task_id}: Processing chat {i+1}/{len(chats)}: {chat_title}")
 
                 # Update current chat info
                 sync_task.current_chat_id = chat_id
@@ -716,8 +737,11 @@ def run_background_sync(sync_task_id):
                     sync_task.new_messages += new_count
                     sync_task.total_messages += len(messages)
                     sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new)')
+                    sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new)")
                 else:
-                    sync_task.add_log(f'  - Error: {messages_result.get("error", "Unknown error")}')
+                    error_msg = messages_result.get("error", "Unknown error")
+                    sync_logger.warning(f"Task #{sync_task_id}: Error syncing chat '{chat_title}': {error_msg}")
+                    sync_task.add_log(f'  - Error: {error_msg}')
 
                 # Update synced chats count
                 sync_task.synced_chats = i + 1
@@ -730,8 +754,10 @@ def run_background_sync(sync_task_id):
             sync_task.current_chat_title = ''
             sync_task.save()
             sync_task.add_log(f'Sync completed! {sync_task.synced_messages} messages from {sync_task.synced_chats} chats')
+            sync_logger.info(f"BACKGROUND SYNC COMPLETED: Task #{sync_task_id} - {sync_task.synced_messages} messages from {sync_task.synced_chats} chats ({sync_task.new_messages} new)")
 
         except Exception as e:
+            sync_logger.error(f"BACKGROUND SYNC FAILED: Task #{sync_task_id} - {type(e).__name__}: {str(e)}")
             try:
                 sync_task = SyncTask.objects.get(id=sync_task_id)
                 sync_task.status = 'failed'
@@ -739,19 +765,22 @@ def run_background_sync(sync_task_id):
                 sync_task.completed_at = timezone.now()
                 sync_task.save()
                 sync_task.add_log(f'Error: {str(e)}')
-            except:
-                pass
+            except Exception as db_error:
+                sync_logger.error(f"Failed to update SyncTask #{sync_task_id}: {str(db_error)}")
 
 
 def start_background_sync(sync_task):
     """Start the sync in a background thread."""
     import threading
+    sync_logger.info(f"Starting background thread for SyncTask #{sync_task.id}")
     thread = threading.Thread(
         target=run_background_sync,
         args=(sync_task.id,),
-        daemon=True
+        daemon=True,
+        name=f"sync_task_{sync_task.id}"
     )
     thread.start()
+    sync_logger.debug(f"Background thread started: {thread.name}")
     return thread
 
 
