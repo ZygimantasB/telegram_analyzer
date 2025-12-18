@@ -99,8 +99,61 @@
 
                                 {% if msg.has_media %}
                                 <div class="message-media">
-                                    <i class="bi bi-file-earmark"></i>
-                                    <span class="text-muted">{{ msg.media_type }}</span>
+                                    {% if msg.media_file %}
+                                        {% if msg.is_image %}
+                                        <!-- Display image -->
+                                        <a href="{% url 'telegram:download_media' msg.id %}" target="_blank" class="media-link">
+                                            <img src="{% url 'telegram:download_media' msg.id %}"
+                                                 alt="Image"
+                                                 class="message-image img-fluid rounded"
+                                                 style="max-width: 300px; max-height: 300px; cursor: pointer;">
+                                        </a>
+                                        {% elif msg.is_video %}
+                                        <!-- Video with download button -->
+                                        <div class="media-video">
+                                            <video controls class="rounded" style="max-width: 300px; max-height: 300px;">
+                                                <source src="{% url 'telegram:download_media' msg.id %}" type="{{ msg.media_mime_type }}">
+                                                Your browser does not support video.
+                                            </video>
+                                            <div class="mt-1">
+                                                <a href="{% url 'telegram:download_media' msg.id %}" class="btn btn-sm btn-outline-primary" download>
+                                                    <i class="bi bi-download"></i> Download
+                                                    {% if msg.media_file_size %}
+                                                    <small>({{ msg.media_file_size|filesizeformat }})</small>
+                                                    {% endif %}
+                                                </a>
+                                            </div>
+                                        </div>
+                                        {% elif msg.is_audio %}
+                                        <!-- Audio player -->
+                                        <div class="media-audio">
+                                            <audio controls style="max-width: 250px;">
+                                                <source src="{% url 'telegram:download_media' msg.id %}" type="{{ msg.media_mime_type }}">
+                                            </audio>
+                                            {% if msg.media_file_name %}
+                                            <div class="small text-muted">{{ msg.media_file_name }}</div>
+                                            {% endif %}
+                                        </div>
+                                        {% else %}
+                                        <!-- Document/file download -->
+                                        <div class="media-document p-2 bg-light rounded d-inline-block">
+                                            <a href="{% url 'telegram:download_media' msg.id %}" class="text-decoration-none" download>
+                                                <i class="bi bi-file-earmark-arrow-down fs-4 me-2"></i>
+                                                <span>{{ msg.media_file_name|default:"Download file" }}</span>
+                                                {% if msg.media_file_size %}
+                                                <small class="text-muted">({{ msg.media_file_size|filesizeformat }})</small>
+                                                {% endif %}
+                                            </a>
+                                        </div>
+                                        {% endif %}
+                                    {% else %}
+                                    <!-- Media not downloaded yet -->
+                                    <div class="media-placeholder text-muted">
+                                        <i class="bi bi-file-earmark"></i>
+                                        <span>{{ msg.media_type }}</span>
+                                        <small>(not downloaded)</small>
+                                    </div>
+                                    {% endif %}
                                 </div>
                                 {% endif %}
 

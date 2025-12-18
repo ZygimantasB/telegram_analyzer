@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import os
+import mimetypes
+from pathlib import Path
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -8,6 +11,15 @@ from telethon.errors import (
     PhoneCodeExpiredError,
     PasswordHashInvalidError,
     FloodWaitError,
+)
+from telethon.tl.types import (
+    MessageMediaPhoto,
+    MessageMediaDocument,
+    MessageMediaWebPage,
+    DocumentAttributeFilename,
+    DocumentAttributeVideo,
+    DocumentAttributeAudio,
+    DocumentAttributeImageSize,
 )
 from django.conf import settings
 
@@ -44,6 +56,122 @@ class TelegramClientManager:
         else:
             session = StringSession()
         return TelegramClient(session, self.api_id, self.api_hash)
+
+    def _get_media_info(self, message):
+        """Extract media information from a Telegram message.
+
+        Returns dict with media metadata or None if no media.
+        """
+        if not message.media:
+            return None
+
+        media = message.media
+        media_info = {
+            'type': type(media).__name__,
+            'mime_type': None,
+            'file_name': None,
+            'file_size': None,
+            'width': None,
+            'height': None,
+            'duration': None,
+        }
+
+        if isinstance(media, MessageMediaPhoto):
+            media_info['mime_type'] = 'image/jpeg'
+            media_info['file_name'] = f'photo_{message.id}.jpg'
+            if media.photo:
+                # Get largest photo size
+                if hasattr(media.photo, 'sizes') and media.photo.sizes:
+                    largest = max(media.photo.sizes, key=lambda s: getattr(s, 'size', 0) if hasattr(s, 'size') else 0)
+                    if hasattr(largest, 'w'):
+                        media_info['width'] = largest.w
+                    if hasattr(largest, 'h'):
+                        media_info['height'] = largest.h
+                    if hasattr(largest, 'size'):
+                        media_info['file_size'] = largest.size
+
+        elif isinstance(media, MessageMediaDocument):
+            doc = media.document
+            if doc:
+                media_info['mime_type'] = doc.mime_type
+                media_info['file_size'] = doc.size
+
+                # Get filename and other attributes
+                for attr in doc.attributes:
+                    if isinstance(attr, DocumentAttributeFilename):
+                        media_info['file_name'] = attr.file_name
+                    elif isinstance(attr, DocumentAttributeVideo):
+                        media_info['width'] = attr.w
+                        media_info['height'] = attr.h
+                        media_info['duration'] = attr.duration
+                    elif isinstance(attr, DocumentAttributeAudio):
+                        media_info['duration'] = attr.duration
+                    elif isinstance(attr, DocumentAttributeImageSize):
+                        media_info['width'] = attr.w
+                        media_info['height'] = attr.h
+
+                # Generate filename if not found
+                if not media_info['file_name']:
+                    ext = mimetypes.guess_extension(doc.mime_type or '') or ''
+                    media_info['file_name'] = f'document_{message.id}{ext}'
+
+        elif isinstance(media, MessageMediaWebPage):
+            # Web pages don't have downloadable media
+            return None
+
+        return media_info
+
+    async def _download_media_async(self, client, message, save_dir, user_id, chat_id):
+        """Download media from a message asynchronously.
+
+        Args:
+            client: Connected Telethon client
+            message: Telegram message object
+            save_dir: Base directory for media storage
+            user_id: User ID for path organization
+            chat_id: Chat ID for path organization
+
+        Returns:
+            Dict with file path and media info, or None if no media/failed
+        """
+        if not message.media:
+            return None
+
+        media_info = self._get_media_info(message)
+        if not media_info:
+            return None
+
+        try:
+            # Create directory structure: media/telegram_media/user_id/chat_id/message_id/
+            media_dir = Path(save_dir) / 'telegram_media' / str(user_id) / str(chat_id) / str(message.id)
+            media_dir.mkdir(parents=True, exist_ok=True)
+
+            file_name = media_info['file_name'] or f'media_{message.id}'
+            file_path = media_dir / file_name
+
+            # Download the media
+            downloaded_path = await client.download_media(message, file=str(file_path))
+
+            if downloaded_path:
+                # Get actual file size if not known
+                if not media_info['file_size']:
+                    media_info['file_size'] = os.path.getsize(downloaded_path)
+
+                # Return relative path from MEDIA_ROOT
+                rel_path = Path(downloaded_path).relative_to(save_dir)
+                return {
+                    'file_path': str(rel_path),
+                    'file_name': media_info['file_name'],
+                    'file_size': media_info['file_size'],
+                    'mime_type': media_info['mime_type'],
+                    'width': media_info['width'],
+                    'height': media_info['height'],
+                    'duration': media_info['duration'],
+                }
+        except Exception as e:
+            logger.warning(f"Failed to download media for message {message.id}: {e}")
+
+        return None
 
     async def _send_code_async(self, client, phone_number):
         """Send verification code to phone number."""
@@ -472,13 +600,17 @@ class TelegramClientManager:
 
         return loop.run_until_complete(_get_all_messages())
 
-    def fetch_all_messages_from_chat(self, session_string, chat_id, min_id=0):
+    def fetch_all_messages_from_chat(self, session_string, chat_id, min_id=0,
+                                       download_media=False, user_id=None, media_dir=None):
         """Fetch ALL messages from a chat for database storage.
 
         Args:
             session_string: Telegram session string
             chat_id: Chat ID to fetch messages from
             min_id: Only fetch messages with ID > min_id (for incremental sync)
+            download_media: Whether to download media files
+            user_id: User ID for organizing media files (required if download_media=True)
+            media_dir: Base directory for media storage (required if download_media=True)
 
         Returns:
             Dict with success, messages list, and total count
@@ -517,7 +649,7 @@ class TelegramClientManager:
                             elif hasattr(msg.sender, 'title'):
                                 sender_name = msg.sender.title
 
-                        all_messages.append({
+                        msg_data = {
                             'id': msg.id,
                             'text': msg.text or '',
                             'date': msg.date,
@@ -529,7 +661,31 @@ class TelegramClientManager:
                             'reply_to_msg_id': msg.reply_to.reply_to_msg_id if msg.reply_to else None,
                             'forwards': msg.forwards,
                             'views': msg.views,
-                        })
+                            # Media fields (will be populated if download_media=True)
+                            'media_file_path': None,
+                            'media_file_name': None,
+                            'media_file_size': None,
+                            'media_mime_type': None,
+                            'media_width': None,
+                            'media_height': None,
+                            'media_duration': None,
+                        }
+
+                        # Download media if requested
+                        if download_media and msg.media and user_id and media_dir:
+                            media_result = await self._download_media_async(
+                                client, msg, media_dir, user_id, chat_id
+                            )
+                            if media_result:
+                                msg_data['media_file_path'] = media_result['file_path']
+                                msg_data['media_file_name'] = media_result['file_name']
+                                msg_data['media_file_size'] = media_result['file_size']
+                                msg_data['media_mime_type'] = media_result['mime_type']
+                                msg_data['media_width'] = media_result['width']
+                                msg_data['media_height'] = media_result['height']
+                                msg_data['media_duration'] = media_result['duration']
+
+                        all_messages.append(msg_data)
 
                     offset_id = messages[-1].id
 
@@ -609,9 +765,14 @@ def run_background_sync(sync_task_id):
         """
         import threading
         from django.utils import timezone
+        from django.conf import settings as django_settings
+        from django.core.files import File
         from .models import SyncTask, TelegramChat, TelegramMessage
 
         sync_logger.info(f"BACKGROUND SYNC STARTED: Task #{sync_task_id}")
+
+        # Get media directory from Django settings
+        media_dir = str(django_settings.MEDIA_ROOT)
 
         try:
             sync_task = SyncTask.objects.get(id=sync_task_id)
@@ -692,17 +853,21 @@ def run_background_sync(sync_task_id):
                     telegram_chat.is_pinned = chat_data.get('is_pinned', False)
                     telegram_chat.save()
 
-                # Fetch messages for this chat
+                # Fetch messages for this chat (with media download)
                 min_id = telegram_chat.last_message_id or 0
                 messages_result = manager.fetch_all_messages_from_chat(
                     session_string,
                     chat_id,
-                    min_id=min_id
+                    min_id=min_id,
+                    download_media=True,
+                    user_id=session.user_id,
+                    media_dir=media_dir
                 )
 
                 if messages_result['success']:
                     messages = messages_result['messages']
                     new_count = 0
+                    media_count = 0
 
                     for msg_data in messages:
                         msg_obj, msg_created = TelegramMessage.objects.get_or_create(
@@ -719,10 +884,31 @@ def run_background_sync(sync_task_id):
                                 'reply_to_msg_id': msg_data['reply_to_msg_id'],
                                 'forwards': msg_data['forwards'],
                                 'views': msg_data['views'],
+                                # Media file fields
+                                'media_file': msg_data.get('media_file_path'),
+                                'media_file_name': msg_data.get('media_file_name'),
+                                'media_file_size': msg_data.get('media_file_size'),
+                                'media_mime_type': msg_data.get('media_mime_type'),
+                                'media_width': msg_data.get('media_width'),
+                                'media_height': msg_data.get('media_height'),
+                                'media_duration': msg_data.get('media_duration'),
                             }
                         )
                         if msg_created:
                             new_count += 1
+                            if msg_data.get('media_file_path'):
+                                media_count += 1
+                        elif msg_data.get('media_file_path') and not msg_obj.media_file:
+                            # Update existing message with media if it wasn't downloaded before
+                            msg_obj.media_file = msg_data['media_file_path']
+                            msg_obj.media_file_name = msg_data.get('media_file_name')
+                            msg_obj.media_file_size = msg_data.get('media_file_size')
+                            msg_obj.media_mime_type = msg_data.get('media_mime_type')
+                            msg_obj.media_width = msg_data.get('media_width')
+                            msg_obj.media_height = msg_data.get('media_height')
+                            msg_obj.media_duration = msg_data.get('media_duration')
+                            msg_obj.save()
+                            media_count += 1
 
                     # Update chat stats
                     if messages:
@@ -736,8 +922,9 @@ def run_background_sync(sync_task_id):
                     sync_task.synced_messages += len(messages)
                     sync_task.new_messages += new_count
                     sync_task.total_messages += len(messages)
-                    sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new)')
-                    sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new)")
+                    media_info = f", {media_count} media files" if media_count > 0 else ""
+                    sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new{media_info})')
+                    sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new, {media_count} media)")
                 else:
                     error_msg = messages_result.get("error", "Unknown error")
                     sync_logger.warning(f"Task #{sync_task_id}: Error syncing chat '{chat_title}': {error_msg}")

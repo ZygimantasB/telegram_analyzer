@@ -84,9 +84,26 @@
                                 </div>
 
                                 {% if msg.has_media %}
-                                <span class="badge bg-secondary me-2">
-                                    <i class="bi bi-file-earmark"></i> {{ msg.media_type }}
-                                </span>
+                                <div class="mb-2">
+                                    {% if msg.media_file %}
+                                        {% if msg.is_image %}
+                                        <a href="{% url 'telegram:download_media' msg.id %}" target="_blank">
+                                            <img src="{% url 'telegram:download_media' msg.id %}"
+                                                 alt="Deleted Image"
+                                                 class="rounded border border-danger"
+                                                 style="max-width: 150px; max-height: 100px; object-fit: cover; opacity: 0.8;">
+                                        </a>
+                                        {% else %}
+                                        <a href="{% url 'telegram:download_media' msg.id %}" class="badge bg-secondary text-decoration-none" download>
+                                            <i class="bi bi-download"></i> {{ msg.media_file_name|default:msg.media_type|truncatechars:25 }}
+                                        </a>
+                                        {% endif %}
+                                    {% else %}
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-file-earmark"></i> {{ msg.media_type }}
+                                    </span>
+                                    {% endif %}
+                                </div>
                                 {% endif %}
 
                                 <p class="mb-1 {% if msg.is_outgoing %}text-primary{% endif %}">

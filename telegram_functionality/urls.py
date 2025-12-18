@@ -29,4 +29,6 @@ urlpatterns = [
     path('sync-progress/<int:task_id>/', views.sync_progress_api, name='sync_progress'),
     path('cancel-sync/<int:task_id>/', views.cancel_sync, name='cancel_sync'),
     path('sync-history/', views.sync_history, name='sync_history'),
+    # Media download
+    path('media/<int:message_id>/', views.download_media, name='download_media'),
 ]

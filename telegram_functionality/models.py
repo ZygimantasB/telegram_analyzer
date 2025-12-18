@@ -166,6 +166,14 @@ class SyncTask(models.Model):
         return self.status in ['completed', 'failed', 'cancelled']
 
 
+def telegram_media_path(instance, filename):
+    """Generate upload path for telegram media files."""
+    # Organize by user_id/chat_id/message_id/filename
+    user_id = instance.chat.session.user_id
+    chat_id = instance.chat.chat_id
+    return f'telegram_media/{user_id}/{chat_id}/{instance.message_id}/{filename}'
+
+
 class TelegramMessage(models.Model):
     """Model to store Telegram messages with deletion tracking."""
 
@@ -186,6 +194,15 @@ class TelegramMessage(models.Model):
     forwards = models.IntegerField(null=True, blank=True)
     views = models.IntegerField(null=True, blank=True)
 
+    # Media file storage
+    media_file = models.FileField(upload_to=telegram_media_path, blank=True, null=True)
+    media_file_name = models.CharField(max_length=255, blank=True, null=True)
+    media_file_size = models.BigIntegerField(null=True, blank=True)
+    media_mime_type = models.CharField(max_length=100, blank=True, null=True)
+    media_width = models.IntegerField(null=True, blank=True)
+    media_height = models.IntegerField(null=True, blank=True)
+    media_duration = models.IntegerField(null=True, blank=True)  # seconds for audio/video
+
     # Deletion tracking
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -204,3 +221,31 @@ class TelegramMessage(models.Model):
         preview = self.text[:50] + '...' if len(self.text) > 50 else self.text
         status = ' [DELETED]' if self.is_deleted else ''
         return f"{self.chat.title}: {preview}{status}"
+
+    @property
+    def is_image(self):
+        """Check if media is an image."""
+        if self.media_mime_type:
+            return self.media_mime_type.startswith('image/')
+        return self.media_type in ['MessageMediaPhoto', 'Photo']
+
+    @property
+    def is_video(self):
+        """Check if media is a video."""
+        if self.media_mime_type:
+            return self.media_mime_type.startswith('video/')
+        return self.media_type in ['MessageMediaDocument'] and self.media_mime_type and 'video' in self.media_mime_type
+
+    @property
+    def is_audio(self):
+        """Check if media is audio."""
+        if self.media_mime_type:
+            return self.media_mime_type.startswith('audio/')
+        return False
+
+    @property
+    def is_document(self):
+        """Check if media is a document (not image/video/audio)."""
+        if not self.has_media or not self.media_file:
+            return False
+        return not (self.is_image or self.is_video or self.is_audio)

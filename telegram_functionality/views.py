@@ -1,9 +1,12 @@
-from django.shortcuts import render, redirect
+import os
+import mimetypes
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse, Http404
 from django.utils import timezone
 from django.db.models import Q
+from django.conf import settings
 
 from .forms import PhoneNumberForm, VerificationCodeForm, TwoFactorForm
 from .models import TelegramSession, TelegramChat, TelegramMessage, SyncTask
@@ -19,6 +22,47 @@ from telegram_analyzer_app.logging_utils import (
     log_telegram_connection,
     get_client_ip,
 )
+
+
+def home(request):
+    """Home page view."""
+    return render(request, 'telegram_functionality/home.html')
+
+
+@login_required
+def download_media(request, message_id):
+    """Download or serve media file for a message."""
+    message = get_object_or_404(TelegramMessage, id=message_id)
+
+    # Security check: ensure user owns this message
+    if message.chat.session.user != request.user:
+        raise Http404("Media not found")
+
+    if not message.media_file:
+        raise Http404("No media file available")
+
+    # Get the full file path
+    file_path = os.path.join(settings.MEDIA_ROOT, str(message.media_file))
+
+    if not os.path.exists(file_path):
+        raise Http404("Media file not found on disk")
+
+    # Determine content type
+    content_type, _ = mimetypes.guess_type(file_path)
+    if not content_type:
+        content_type = 'application/octet-stream'
+
+    # Determine if this should be displayed inline (images) or downloaded
+    disposition = 'inline' if content_type.startswith('image/') else 'attachment'
+    filename = message.media_file_name or os.path.basename(file_path)
+
+    response = FileResponse(
+        open(file_path, 'rb'),
+        content_type=content_type
+    )
+    response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+
+    return response
 
 
 @login_required

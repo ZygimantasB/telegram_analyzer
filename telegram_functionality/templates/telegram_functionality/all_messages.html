@@ -94,9 +94,26 @@
                                 </div>
 
                                 {% if msg.has_media %}
-                                <span class="badge bg-light text-dark me-2">
-                                    <i class="bi bi-file-earmark"></i> {{ msg.media_type }}
-                                </span>
+                                <div class="mb-2">
+                                    {% if msg.media_file %}
+                                        {% if msg.is_image %}
+                                        <a href="{% url 'telegram:download_media' msg.id %}" target="_blank">
+                                            <img src="{% url 'telegram:download_media' msg.id %}"
+                                                 alt="Image"
+                                                 class="rounded"
+                                                 style="max-width: 100px; max-height: 60px; object-fit: cover;">
+                                        </a>
+                                        {% else %}
+                                        <a href="{% url 'telegram:download_media' msg.id %}" class="badge bg-primary text-white text-decoration-none" download>
+                                            <i class="bi bi-download"></i> {{ msg.media_file_name|default:msg.media_type|truncatechars:20 }}
+                                        </a>
+                                        {% endif %}
+                                    {% else %}
+                                    <span class="badge bg-light text-dark">
+                                        <i class="bi bi-file-earmark"></i> {{ msg.media_type }}
+                                    </span>
+                                    {% endif %}
+                                </div>
                                 {% endif %}
 
                                 <p class="mb-0 text-truncate-2 {% if msg.is_outgoing %}text-primary{% endif %}">
