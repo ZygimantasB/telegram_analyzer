@@ -2,87 +2,98 @@
 
 {% block title %}Telegram Analyzer - Home{% endblock %}
 
-{% block extra_css %}
-<style>
-    .hero-section {
-        background: linear-gradient(135deg, #0088cc 0%, #005f8c 100%);
-        color: white;
-        padding: 80px 0;
-    }
-    .feature-card {
-        transition: transform 0.2s ease-in-out;
-        border: none;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    .feature-card:hover {
-        transform: translateY(-5px);
-    }
-    .feature-icon {
-        font-size: 2.5rem;
-        color: #0088cc;
-    }
-</style>
-{% endblock %}
-
 {% block content %}
 <!-- Hero Section -->
-<section class="hero-section">
-    <div class="container text-center">
-        <h1 class="display-4 fw-bold mb-4">
-            <i class="bi bi-telegram"></i> Telegram Analyzer
-        </h1>
-        <p class="lead mb-4">
-            Sync, analyze, and track your Telegram messages. Never lose important conversations again.
-        </p>
-        {% if user.is_authenticated %}
-        <a href="{% url 'telegram:dashboard' %}" class="btn btn-light btn-lg">
-            <i class="bi bi-speedometer2"></i> Go to Dashboard
-        </a>
-        {% else %}
-        <a href="{% url 'users:register' %}" class="btn btn-light btn-lg me-2">
-            <i class="bi bi-person-plus"></i> Get Started
-        </a>
-        <a href="{% url 'users:login' %}" class="btn btn-outline-light btn-lg">
-            <i class="bi bi-box-arrow-in-right"></i> Login
-        </a>
-        {% endif %}
+<section class="hero-section py-5">
+    <div class="container py-5">
+        <div class="row align-items-center">
+            <div class="col-lg-6 text-center text-lg-start mb-5 mb-lg-0">
+                <h1 class="display-4 fw-bold text-white mb-4 animate-fade-in">
+                    <i class="bi bi-telegram"></i> Telegram Analyzer
+                </h1>
+                <p class="lead text-white opacity-90 mb-4">
+                    Sync, analyze, and protect your Telegram messages.
+                    Track deleted messages and never lose important conversations again.
+                </p>
+                {% if user.is_authenticated %}
+                <div class="d-flex gap-3 justify-content-center justify-content-lg-start">
+                    <a href="{% url 'telegram:dashboard' %}" class="btn btn-light btn-lg px-4">
+                        <i class="bi bi-speedometer2 me-2"></i> Dashboard
+                    </a>
+                    <a href="{% url 'telegram:start_sync' %}" class="btn btn-outline-light btn-lg px-4">
+                        <i class="bi bi-arrow-repeat me-2"></i> Sync Now
+                    </a>
+                </div>
+                {% else %}
+                <div class="d-flex gap-3 justify-content-center justify-content-lg-start">
+                    <a href="{% url 'users:register' %}" class="btn btn-light btn-lg px-4">
+                        <i class="bi bi-person-plus me-2"></i> Get Started
+                    </a>
+                    <a href="{% url 'users:login' %}" class="btn btn-outline-light btn-lg px-4">
+                        <i class="bi bi-box-arrow-in-right me-2"></i> Login
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="col-lg-6 text-center">
+                <div class="position-relative">
+                    <div class="bg-white bg-opacity-10 rounded-4 p-4 glass-effect" style="backdrop-filter: blur(10px);">
+                        <i class="bi bi-shield-check text-white" style="font-size: 8rem; opacity: 0.9;"></i>
+                        <div class="mt-3 text-white">
+                            <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i> Encrypted</span>
+                            <span class="badge bg-info me-2"><i class="bi bi-cloud"></i> Synced</span>
+                            <span class="badge bg-warning text-dark"><i class="bi bi-eye"></i> Tracked</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </section>
 
 <!-- Features Section -->
 <section class="py-5">
     <div class="container">
-        <h2 class="text-center mb-5">Features</h2>
+        <div class="text-center mb-5">
+            <h2 class="fw-bold mb-3">Powerful Features</h2>
+            <p class="text-secondary">Everything you need to manage and protect your Telegram data</p>
+        </div>
         <div class="row g-4">
             <div class="col-md-4">
-                <div class="card feature-card h-100 text-center p-4">
+                <div class="card feature-card h-100 text-center p-4 border-0">
                     <div class="card-body">
-                        <i class="bi bi-cloud-download feature-icon mb-3"></i>
-                        <h5 class="card-title">Sync Messages</h5>
-                        <p class="card-text text-muted">
-                            Securely sync all your Telegram chats and messages to your personal database.
+                        <div class="feature-icon mb-3">
+                            <i class="bi bi-cloud-download"></i>
+                        </div>
+                        <h5 class="card-title fw-bold">Sync Messages</h5>
+                        <p class="card-text text-secondary">
+                            Automatically sync all your Telegram chats and messages to your personal database.
                         </p>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card feature-card h-100 text-center p-4">
+                <div class="card feature-card h-100 text-center p-4 border-0">
                     <div class="card-body">
-                        <i class="bi bi-trash3 feature-icon mb-3"></i>
-                        <h5 class="card-title">Track Deleted Messages</h5>
-                        <p class="card-text text-muted">
-                            Detect and view messages that have been deleted from your chats.
+                        <div class="feature-icon mb-3">
+                            <i class="bi bi-trash3"></i>
+                        </div>
+                        <h5 class="card-title fw-bold">Track Deleted</h5>
+                        <p class="card-text text-secondary">
+                            Detect and view messages that have been deleted from your chats by anyone.
                         </p>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card feature-card h-100 text-center p-4">
+                <div class="card feature-card h-100 text-center p-4 border-0">
                     <div class="card-body">
-                        <i class="bi bi-shield-lock feature-icon mb-3"></i>
-                        <h5 class="card-title">Secure & Private</h5>
-                        <p class="card-text text-muted">
-                            Your session data is encrypted. All data stays on your own server.
+                        <div class="feature-icon mb-3">
+                            <i class="bi bi-image"></i>
+                        </div>
+                        <h5 class="card-title fw-bold">Save Media</h5>
+                        <p class="card-text text-secondary">
+                            Download and store all photos, videos, and files from your chats automatically.
                         </p>
                     </div>
                 </div>
@@ -92,77 +103,91 @@
 </section>
 
 <!-- How It Works Section -->
-<section class="py-5 bg-light">
+<section class="py-5 bg-gradient-subtle">
     <div class="container">
-        <h2 class="text-center mb-5">How It Works</h2>
+        <div class="text-center mb-5">
+            <h2 class="fw-bold mb-3">How It Works</h2>
+            <p class="text-secondary">Get started in just 4 simple steps</p>
+        </div>
         <div class="row g-4">
             <div class="col-md-3 text-center">
-                <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <span class="fs-4 fw-bold">1</span>
+                <div class="rounded-circle bg-gradient-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 70px; height: 70px;">
+                    <span class="fs-3 fw-bold">1</span>
                 </div>
-                <h5>Create Account</h5>
-                <p class="text-muted small">Sign up with your email</p>
+                <h5 class="fw-bold">Create Account</h5>
+                <p class="text-secondary small">Sign up with your email address</p>
             </div>
             <div class="col-md-3 text-center">
-                <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <span class="fs-4 fw-bold">2</span>
+                <div class="rounded-circle bg-gradient-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 70px; height: 70px;">
+                    <span class="fs-3 fw-bold">2</span>
                 </div>
-                <h5>Connect Telegram</h5>
-                <p class="text-muted small">Link your Telegram account</p>
+                <h5 class="fw-bold">Connect Telegram</h5>
+                <p class="text-secondary small">Link your Telegram account securely</p>
             </div>
             <div class="col-md-3 text-center">
-                <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <span class="fs-4 fw-bold">3</span>
+                <div class="rounded-circle bg-gradient-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 70px; height: 70px;">
+                    <span class="fs-3 fw-bold">3</span>
                 </div>
-                <h5>Sync Chats</h5>
-                <p class="text-muted small">Download your messages</p>
+                <h5 class="fw-bold">Sync Chats</h5>
+                <p class="text-secondary small">Download all your messages</p>
             </div>
             <div class="col-md-3 text-center">
-                <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <span class="fs-4 fw-bold">4</span>
+                <div class="rounded-circle bg-gradient-primary text-white d-inline-flex align-items-center justify-content-center mb-3" style="width: 70px; height: 70px;">
+                    <span class="fs-3 fw-bold">4</span>
                 </div>
-                <h5>Analyze</h5>
-                <p class="text-muted small">Track and view messages</p>
+                <h5 class="fw-bold">Analyze</h5>
+                <p class="text-secondary small">View and track your messages</p>
             </div>
         </div>
     </div>
 </section>
 
 {% if user.is_authenticated %}
-<!-- Quick Stats for Authenticated Users -->
+<!-- Quick Actions for Authenticated Users -->
 <section class="py-5">
     <div class="container">
-        <h2 class="text-center mb-5">Quick Actions</h2>
+        <div class="text-center mb-5">
+            <h2 class="fw-bold mb-3">Quick Actions</h2>
+            <p class="text-secondary">Jump right into your most used features</p>
+        </div>
         <div class="row g-4 justify-content-center">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <a href="{% url 'telegram:dashboard' %}" class="text-decoration-none">
-                    <div class="card text-center p-4 h-100">
-                        <i class="bi bi-speedometer2 fs-1 text-primary"></i>
-                        <h5 class="mt-3">Dashboard</h5>
+                    <div class="card text-center p-4 h-100 border-0">
+                        <div class="text-gradient mb-3">
+                            <i class="bi bi-speedometer2" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Dashboard</h6>
                     </div>
                 </a>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <a href="{% url 'telegram:chats' %}" class="text-decoration-none">
-                    <div class="card text-center p-4 h-100">
-                        <i class="bi bi-chat-dots fs-1 text-primary"></i>
-                        <h5 class="mt-3">View Chats</h5>
+                    <div class="card text-center p-4 h-100 border-0">
+                        <div class="text-gradient mb-3">
+                            <i class="bi bi-chat-dots-fill" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">View Chats</h6>
                     </div>
                 </a>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <a href="{% url 'telegram:deleted_messages' %}" class="text-decoration-none">
-                    <div class="card text-center p-4 h-100">
-                        <i class="bi bi-trash3 fs-1 text-primary"></i>
-                        <h5 class="mt-3">Deleted Messages</h5>
+                    <div class="card text-center p-4 h-100 border-0">
+                        <div class="text-gradient mb-3">
+                            <i class="bi bi-trash3-fill" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Deleted Messages</h6>
                     </div>
                 </a>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <a href="{% url 'telegram:sync_history' %}" class="text-decoration-none">
-                    <div class="card text-center p-4 h-100">
-                        <i class="bi bi-clock-history fs-1 text-primary"></i>
-                        <h5 class="mt-3">Sync History</h5>
+                    <div class="card text-center p-4 h-100 border-0">
+                        <div class="text-gradient mb-3">
+                            <i class="bi bi-clock-history" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <h6 class="fw-bold mb-0">Sync History</h6>
                     </div>
                 </a>
             </div>
@@ -170,4 +195,57 @@
     </div>
 </section>
 {% endif %}
+
+<!-- Security Section -->
+<section class="py-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-6 mb-4 mb-lg-0">
+                <h2 class="fw-bold mb-4">Your Privacy Matters</h2>
+                <div class="d-flex mb-3">
+                    <div class="me-3">
+                        <div class="rounded-circle bg-success bg-opacity-10 p-2">
+                            <i class="bi bi-shield-lock text-success"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-1">End-to-End Encryption</h6>
+                        <p class="text-secondary small mb-0">Your session data is encrypted using industry-standard encryption</p>
+                    </div>
+                </div>
+                <div class="d-flex mb-3">
+                    <div class="me-3">
+                        <div class="rounded-circle bg-info bg-opacity-10 p-2">
+                            <i class="bi bi-server text-info"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-1">Self-Hosted</h6>
+                        <p class="text-secondary small mb-0">All data stays on your own server - you're in full control</p>
+                    </div>
+                </div>
+                <div class="d-flex">
+                    <div class="me-3">
+                        <div class="rounded-circle bg-warning bg-opacity-10 p-2">
+                            <i class="bi bi-code-slash text-warning"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-1">Open Source</h6>
+                        <p class="text-secondary small mb-0">Review the code yourself - transparency is key</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card glass-effect border-0 p-4">
+                    <div class="text-center">
+                        <i class="bi bi-lock-fill text-gradient" style="font-size: 5rem;"></i>
+                        <h4 class="fw-bold mt-3">100% Secure</h4>
+                        <p class="text-secondary mb-0">Your data never leaves your server</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
 {% endblock %}

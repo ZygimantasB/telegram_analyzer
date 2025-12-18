@@ -38,15 +38,20 @@ class TelegramClientManager:
         logger.debug("TelegramClientManager initialized")
 
     def _get_event_loop(self):
-        """Get or create event loop."""
+        """Get or create event loop for current thread."""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
+            # In Python 3.10+, get_event_loop() may fail in non-main threads
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop, try to get or create one
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("Loop is closed")
+            except RuntimeError:
+                # Create a new event loop for this thread
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
         return loop
 
     def get_client(self, session_string=None):
@@ -764,15 +769,28 @@ def run_background_sync(sync_task_id):
         It updates the SyncTask model with progress as it goes.
         """
         import threading
+        import traceback
         from django.utils import timezone
         from django.conf import settings as django_settings
         from django.core.files import File
         from .models import SyncTask, TelegramChat, TelegramMessage
 
-        sync_logger.info(f"BACKGROUND SYNC STARTED: Task #{sync_task_id}")
+        sync_logger.info(f"BACKGROUND SYNC STARTED: Task #{sync_task_id} in thread {threading.current_thread().name}")
 
         # Get media directory from Django settings
         media_dir = str(django_settings.MEDIA_ROOT)
+
+        # Helper to safely update task with error
+        def fail_task(task, error_msg):
+            try:
+                task.status = 'failed'
+                task.error_message = error_msg
+                task.completed_at = timezone.now()
+                task.save()
+                task.add_log(f'Error: {error_msg}')
+                sync_logger.error(f"Task #{sync_task_id} FAILED: {error_msg}")
+            except Exception as e:
+                sync_logger.error(f"Failed to update task status: {e}")
 
         try:
             sync_task = SyncTask.objects.get(id=sync_task_id)
@@ -809,126 +827,135 @@ def run_background_sync(sync_task_id):
 
             # Sync each chat
             for i, chat_data in enumerate(chats):
-                # Check if task was cancelled
-                sync_task.refresh_from_db()
-                if sync_task.status == 'cancelled':
-                    sync_logger.info(f"Task #{sync_task_id}: Cancelled by user at chat {i+1}/{len(chats)}")
-                    sync_task.add_log('Sync cancelled by user')
-                    sync_task.completed_at = timezone.now()
+                try:
+                    # Check if task was cancelled
+                    sync_task.refresh_from_db()
+                    if sync_task.status == 'cancelled':
+                        sync_logger.info(f"Task #{sync_task_id}: Cancelled by user at chat {i+1}/{len(chats)}")
+                        sync_task.add_log('Sync cancelled by user')
+                        sync_task.completed_at = timezone.now()
+                        sync_task.save()
+                        return
+
+                    chat_id = chat_data['id']
+                    chat_title = chat_data['title']
+                    sync_logger.debug(f"Task #{sync_task_id}: Processing chat {i+1}/{len(chats)}: {chat_title}")
+
+                    # Update current chat info
+                    sync_task.current_chat_id = chat_id
+                    sync_task.current_chat_title = chat_title
+                    sync_task.current_chat_progress = 0
                     sync_task.save()
-                    return
+                    sync_task.add_log(f'Syncing chat: {chat_title}')
 
-                chat_id = chat_data['id']
-                chat_title = chat_data['title']
-                sync_logger.debug(f"Task #{sync_task_id}: Processing chat {i+1}/{len(chats)}: {chat_title}")
+                    # Get or create TelegramChat
+                    telegram_chat, created = TelegramChat.objects.get_or_create(
+                        session=session,
+                        chat_id=chat_id,
+                        defaults={
+                            'chat_type': chat_data['type'],
+                            'title': chat_title,
+                            'username': chat_data.get('username'),
+                            'members_count': chat_data.get('members_count'),
+                            'is_archived': chat_data.get('is_archived', False),
+                            'is_pinned': chat_data.get('is_pinned', False),
+                        }
+                    )
 
-                # Update current chat info
-                sync_task.current_chat_id = chat_id
-                sync_task.current_chat_title = chat_title
-                sync_task.current_chat_progress = 0
-                sync_task.save()
-                sync_task.add_log(f'Syncing chat: {chat_title}')
+                    if not created:
+                        # Update existing chat info
+                        telegram_chat.title = chat_title
+                        telegram_chat.chat_type = chat_data['type']
+                        telegram_chat.username = chat_data.get('username')
+                        telegram_chat.members_count = chat_data.get('members_count')
+                        telegram_chat.is_archived = chat_data.get('is_archived', False)
+                        telegram_chat.is_pinned = chat_data.get('is_pinned', False)
+                        telegram_chat.save()
 
-                # Get or create TelegramChat
-                telegram_chat, created = TelegramChat.objects.get_or_create(
-                    session=session,
-                    chat_id=chat_id,
-                    defaults={
-                        'chat_type': chat_data['type'],
-                        'title': chat_title,
-                        'username': chat_data.get('username'),
-                        'members_count': chat_data.get('members_count'),
-                        'is_archived': chat_data.get('is_archived', False),
-                        'is_pinned': chat_data.get('is_pinned', False),
-                    }
-                )
+                    # Fetch messages for this chat (with media download)
+                    min_id = telegram_chat.last_message_id or 0
+                    messages_result = manager.fetch_all_messages_from_chat(
+                        session_string,
+                        chat_id,
+                        min_id=min_id,
+                        download_media=True,
+                        user_id=session.user_id,
+                        media_dir=media_dir
+                    )
 
-                if not created:
-                    # Update existing chat info
-                    telegram_chat.title = chat_title
-                    telegram_chat.chat_type = chat_data['type']
-                    telegram_chat.username = chat_data.get('username')
-                    telegram_chat.members_count = chat_data.get('members_count')
-                    telegram_chat.is_archived = chat_data.get('is_archived', False)
-                    telegram_chat.is_pinned = chat_data.get('is_pinned', False)
-                    telegram_chat.save()
+                    if messages_result['success']:
+                        messages = messages_result['messages']
+                        new_count = 0
+                        media_count = 0
 
-                # Fetch messages for this chat (with media download)
-                min_id = telegram_chat.last_message_id or 0
-                messages_result = manager.fetch_all_messages_from_chat(
-                    session_string,
-                    chat_id,
-                    min_id=min_id,
-                    download_media=True,
-                    user_id=session.user_id,
-                    media_dir=media_dir
-                )
+                        for msg_data in messages:
+                            try:
+                                msg_obj, msg_created = TelegramMessage.objects.get_or_create(
+                                    chat=telegram_chat,
+                                    message_id=msg_data['id'],
+                                    defaults={
+                                        'text': msg_data['text'],
+                                        'date': msg_data['date'],
+                                        'sender_id': msg_data['sender_id'],
+                                        'sender_name': msg_data['sender_name'],
+                                        'is_outgoing': msg_data['is_outgoing'],
+                                        'has_media': msg_data['has_media'],
+                                        'media_type': msg_data['media_type'],
+                                        'reply_to_msg_id': msg_data['reply_to_msg_id'],
+                                        'forwards': msg_data['forwards'],
+                                        'views': msg_data['views'],
+                                        # Media file fields
+                                        'media_file': msg_data.get('media_file_path'),
+                                        'media_file_name': msg_data.get('media_file_name'),
+                                        'media_file_size': msg_data.get('media_file_size'),
+                                        'media_mime_type': msg_data.get('media_mime_type'),
+                                        'media_width': msg_data.get('media_width'),
+                                        'media_height': msg_data.get('media_height'),
+                                        'media_duration': msg_data.get('media_duration'),
+                                    }
+                                )
+                                if msg_created:
+                                    new_count += 1
+                                    if msg_data.get('media_file_path'):
+                                        media_count += 1
+                                elif msg_data.get('media_file_path') and not msg_obj.media_file:
+                                    # Update existing message with media if it wasn't downloaded before
+                                    msg_obj.media_file = msg_data['media_file_path']
+                                    msg_obj.media_file_name = msg_data.get('media_file_name')
+                                    msg_obj.media_file_size = msg_data.get('media_file_size')
+                                    msg_obj.media_mime_type = msg_data.get('media_mime_type')
+                                    msg_obj.media_width = msg_data.get('media_width')
+                                    msg_obj.media_height = msg_data.get('media_height')
+                                    msg_obj.media_duration = msg_data.get('media_duration')
+                                    msg_obj.save()
+                                    media_count += 1
+                            except Exception as msg_err:
+                                sync_logger.warning(f"Task #{sync_task_id}: Error saving message {msg_data.get('id')}: {msg_err}")
 
-                if messages_result['success']:
-                    messages = messages_result['messages']
-                    new_count = 0
-                    media_count = 0
+                        # Update chat stats
+                        if messages:
+                            max_msg_id = max(m['id'] for m in messages)
+                            telegram_chat.last_message_id = max_msg_id
+                        telegram_chat.total_messages = telegram_chat.messages.count()
+                        telegram_chat.last_full_sync = timezone.now()
+                        telegram_chat.save()
 
-                    for msg_data in messages:
-                        msg_obj, msg_created = TelegramMessage.objects.get_or_create(
-                            chat=telegram_chat,
-                            message_id=msg_data['id'],
-                            defaults={
-                                'text': msg_data['text'],
-                                'date': msg_data['date'],
-                                'sender_id': msg_data['sender_id'],
-                                'sender_name': msg_data['sender_name'],
-                                'is_outgoing': msg_data['is_outgoing'],
-                                'has_media': msg_data['has_media'],
-                                'media_type': msg_data['media_type'],
-                                'reply_to_msg_id': msg_data['reply_to_msg_id'],
-                                'forwards': msg_data['forwards'],
-                                'views': msg_data['views'],
-                                # Media file fields
-                                'media_file': msg_data.get('media_file_path'),
-                                'media_file_name': msg_data.get('media_file_name'),
-                                'media_file_size': msg_data.get('media_file_size'),
-                                'media_mime_type': msg_data.get('media_mime_type'),
-                                'media_width': msg_data.get('media_width'),
-                                'media_height': msg_data.get('media_height'),
-                                'media_duration': msg_data.get('media_duration'),
-                            }
-                        )
-                        if msg_created:
-                            new_count += 1
-                            if msg_data.get('media_file_path'):
-                                media_count += 1
-                        elif msg_data.get('media_file_path') and not msg_obj.media_file:
-                            # Update existing message with media if it wasn't downloaded before
-                            msg_obj.media_file = msg_data['media_file_path']
-                            msg_obj.media_file_name = msg_data.get('media_file_name')
-                            msg_obj.media_file_size = msg_data.get('media_file_size')
-                            msg_obj.media_mime_type = msg_data.get('media_mime_type')
-                            msg_obj.media_width = msg_data.get('media_width')
-                            msg_obj.media_height = msg_data.get('media_height')
-                            msg_obj.media_duration = msg_data.get('media_duration')
-                            msg_obj.save()
-                            media_count += 1
+                        # Update sync task progress
+                        sync_task.synced_messages += len(messages)
+                        sync_task.new_messages += new_count
+                        sync_task.total_messages += len(messages)
+                        media_info = f", {media_count} media files" if media_count > 0 else ""
+                        sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new{media_info})')
+                        sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new, {media_count} media)")
+                    else:
+                        error_msg = messages_result.get("error", "Unknown error")
+                        sync_logger.warning(f"Task #{sync_task_id}: Error syncing chat '{chat_title}': {error_msg}")
+                        sync_task.add_log(f'  - Error: {error_msg}')
 
-                    # Update chat stats
-                    if messages:
-                        max_msg_id = max(m['id'] for m in messages)
-                        telegram_chat.last_message_id = max_msg_id
-                    telegram_chat.total_messages = telegram_chat.messages.count()
-                    telegram_chat.last_full_sync = timezone.now()
-                    telegram_chat.save()
-
-                    # Update sync task progress
-                    sync_task.synced_messages += len(messages)
-                    sync_task.new_messages += new_count
-                    sync_task.total_messages += len(messages)
-                    media_info = f", {media_count} media files" if media_count > 0 else ""
-                    sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new{media_info})')
-                    sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new, {media_count} media)")
-                else:
-                    error_msg = messages_result.get("error", "Unknown error")
-                    sync_logger.warning(f"Task #{sync_task_id}: Error syncing chat '{chat_title}': {error_msg}")
-                    sync_task.add_log(f'  - Error: {error_msg}')
+                except Exception as chat_err:
+                    # Log the error but continue with next chat
+                    sync_logger.error(f"Task #{sync_task_id}: Exception syncing chat '{chat_data.get('title', 'Unknown')}': {chat_err}")
+                    sync_task.add_log(f'  - Exception: {str(chat_err)[:100]}')
 
                 # Update synced chats count
                 sync_task.synced_chats = i + 1
@@ -944,14 +971,15 @@ def run_background_sync(sync_task_id):
             sync_logger.info(f"BACKGROUND SYNC COMPLETED: Task #{sync_task_id} - {sync_task.synced_messages} messages from {sync_task.synced_chats} chats ({sync_task.new_messages} new)")
 
         except Exception as e:
-            sync_logger.error(f"BACKGROUND SYNC FAILED: Task #{sync_task_id} - {type(e).__name__}: {str(e)}")
+            error_trace = traceback.format_exc()
+            sync_logger.error(f"BACKGROUND SYNC FAILED: Task #{sync_task_id} - {type(e).__name__}: {str(e)}\n{error_trace}")
             try:
                 sync_task = SyncTask.objects.get(id=sync_task_id)
                 sync_task.status = 'failed'
-                sync_task.error_message = str(e)
+                sync_task.error_message = f"{type(e).__name__}: {str(e)}"
                 sync_task.completed_at = timezone.now()
                 sync_task.save()
-                sync_task.add_log(f'Error: {str(e)}')
+                sync_task.add_log(f'Error: {type(e).__name__}: {str(e)}')
             except Exception as db_error:
                 sync_logger.error(f"Failed to update SyncTask #{sync_task_id}: {str(db_error)}")
 

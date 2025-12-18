@@ -1,0 +1,25 @@
+<footer class="py-4 mt-5" style="background: var(--bg-secondary); border-top: 1px solid var(--border-color);">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6 text-center text-md-start mb-3 mb-md-0">
+                <span class="text-secondary">
+                    <i class="bi bi-telegram me-1"></i>
+                    Telegram Analyzer &copy; 2024
+                </span>
+            </div>
+            <div class="col-md-6 text-center text-md-end">
+                <a href="{% url 'home' %}" class="text-secondary text-decoration-none me-3">
+                    <i class="bi bi-house"></i> Home
+                </a>
+                {% if user.is_authenticated %}
+                <a href="{% url 'telegram:dashboard' %}" class="text-secondary text-decoration-none me-3">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </a>
+                {% endif %}
+                <a href="https://github.com" target="_blank" class="text-secondary text-decoration-none">
+                    <i class="bi bi-github"></i> GitHub
+                </a>
+            </div>
+        </div>
+    </div>
+</footer>
