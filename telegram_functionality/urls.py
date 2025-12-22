@@ -45,6 +45,10 @@ urlpatterns = [
 
     # Media download
     path('media/<int:message_id>/', views.download_media, name='download_media'),
+    path('media/<int:message_id>/trigger-download/', views.trigger_media_download, name='trigger_media_download'),
+    path('media/pending/', views.pending_downloads_api, name='pending_downloads_api'),
+    path('media/bulk-download/', views.bulk_download_media, name='bulk_download'),
+    path('media/start-bulk-download/', views.start_bulk_download, name='start_bulk_download'),
 
     # Search
     path('search/', views.search_messages, name='search'),

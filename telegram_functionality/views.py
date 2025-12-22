@@ -1244,3 +1244,202 @@ def search_chats(request):
     }
 
     return render(request, 'telegram_functionality/search_chats.html', context)
+
+
+# Media download views
+
+@login_required
+def trigger_media_download(request, message_id):
+    """Trigger manual download of a single message's media."""
+    message = get_object_or_404(TelegramMessage, id=message_id)
+
+    # Security check: ensure user owns this message
+    if message.chat.session.user != request.user:
+        return JsonResponse({'success': False, 'error': 'Access denied'}, status=403)
+
+    if not message.has_media:
+        return JsonResponse({'success': False, 'error': 'Message has no media'})
+
+    if message.media_file:
+        return JsonResponse({'success': False, 'error': 'Media already downloaded'})
+
+    session = message.chat.session
+    if not session.is_active:
+        return JsonResponse({'success': False, 'error': 'Telegram session is not active'})
+
+    try:
+        session_string = session.get_session_string()
+        result = telegram_manager.download_single_media(
+            session_string=session_string,
+            chat_id=message.chat.chat_id,
+            message_id=message.message_id,
+            save_dir=settings.MEDIA_ROOT,
+            user_id=request.user.id
+        )
+
+        if result['success']:
+            # Update the message with downloaded file info
+            message.media_file = result['file_path']
+            message.media_file_name = result.get('file_name')
+            message.media_file_size = result.get('file_size')
+            message.media_mime_type = result.get('mime_type')
+            message.save()
+
+            return JsonResponse({
+                'success': True,
+                'file_name': result.get('file_name'),
+                'file_size': result.get('file_size'),
+            })
+        else:
+            return JsonResponse({'success': False, 'error': result.get('error', 'Download failed')})
+
+    except Exception as e:
+        logger.error(f"Error triggering media download: {e}")
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def pending_downloads_api(request):
+    """API endpoint to get count and size of pending media downloads."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return JsonResponse({'success': False, 'error': 'No active session'})
+
+    # Get messages with media but no downloaded file
+    pending = TelegramMessage.objects.filter(
+        chat__session=session,
+        has_media=True,
+    ).filter(
+        Q(media_file='') | Q(media_file__isnull=True)
+    )
+
+    # Count and calculate total size
+    total_count = pending.count()
+
+    # Sum up known file sizes
+    total_size = 0
+    size_unknown_count = 0
+
+    for msg in pending.values('media_file_size'):
+        if msg['media_file_size']:
+            total_size += msg['media_file_size']
+        else:
+            size_unknown_count += 1
+
+    return JsonResponse({
+        'success': True,
+        'total_count': total_count,
+        'total_size': total_size,
+        'size_unknown_count': size_unknown_count,
+        'total_size_formatted': f"{total_size / (1024 * 1024):.2f} MB" if total_size else "Unknown"
+    })
+
+
+@login_required
+def bulk_download_media(request):
+    """View page for bulk downloading pending media."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    # Get pending downloads
+    pending = TelegramMessage.objects.filter(
+        chat__session=session,
+        has_media=True,
+    ).filter(
+        Q(media_file='') | Q(media_file__isnull=True)
+    ).select_related('chat')
+
+    total_count = pending.count()
+
+    # Calculate sizes by chat
+    chats_with_pending = {}
+    total_size = 0
+
+    for msg in pending:
+        chat_id = msg.chat.chat_id
+        if chat_id not in chats_with_pending:
+            chats_with_pending[chat_id] = {
+                'chat': msg.chat,
+                'count': 0,
+                'size': 0,
+            }
+        chats_with_pending[chat_id]['count'] += 1
+        if msg.media_file_size:
+            chats_with_pending[chat_id]['size'] += msg.media_file_size
+            total_size += msg.media_file_size
+
+    context = {
+        'total_count': total_count,
+        'total_size': total_size,
+        'total_size_mb': total_size / (1024 * 1024) if total_size else 0,
+        'chats_with_pending': list(chats_with_pending.values()),
+        'session': session,
+        'all_sessions': get_all_user_sessions(request.user),
+    }
+
+    return render(request, 'telegram_functionality/bulk_download.html', context)
+
+
+@login_required
+def start_bulk_download(request):
+    """Start bulk download of pending media files."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST required'})
+
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return JsonResponse({'success': False, 'error': 'No active session'})
+
+    # Get pending downloads
+    pending = TelegramMessage.objects.filter(
+        chat__session=session,
+        has_media=True,
+    ).filter(
+        Q(media_file='') | Q(media_file__isnull=True)
+    ).select_related('chat')[:100]  # Limit batch size
+
+    if not pending:
+        return JsonResponse({'success': True, 'downloaded': 0, 'message': 'No pending downloads'})
+
+    downloaded = 0
+    failed = 0
+    session_string = session.get_session_string()
+
+    for message in pending:
+        try:
+            result = telegram_manager.download_single_media(
+                session_string=session_string,
+                chat_id=message.chat.chat_id,
+                message_id=message.message_id,
+                save_dir=settings.MEDIA_ROOT,
+                user_id=request.user.id
+            )
+
+            if result['success']:
+                message.media_file = result['file_path']
+                message.media_file_name = result.get('file_name')
+                message.media_file_size = result.get('file_size')
+                message.media_mime_type = result.get('mime_type')
+                message.save()
+                downloaded += 1
+            else:
+                failed += 1
+        except Exception as e:
+            logger.error(f"Error downloading media for message {message.id}: {e}")
+            failed += 1
+
+    # Check remaining
+    remaining = TelegramMessage.objects.filter(
+        chat__session=session,
+        has_media=True,
+    ).filter(
+        Q(media_file='') | Q(media_file__isnull=True)
+    ).count()
+
+    return JsonResponse({
+        'success': True,
+        'downloaded': downloaded,
+        'failed': failed,
+        'remaining': remaining,
+    })

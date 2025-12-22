@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bulk Download Media - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-cloud-download"></i> Bulk Download Media</h2>
+            <p class="text-muted mb-0">Download all pending media files</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'telegram:sync_history' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-clock-history"></i> Sync History
+            </a>
+            <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    {% if total_count > 0 %}
+    <!-- Summary Card -->
+    <div class="card shadow mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="bi bi-info-circle"></i> Pending Downloads Summary</h5>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-md-4">
+                    <div class="h1 text-primary" id="pendingCount">{{ total_count }}</div>
+                    <div class="text-muted">Files Pending</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="h1 text-warning" id="totalSize">{{ total_size_mb|floatformat:2 }}</div>
+                    <div class="text-muted">MB Estimated Size</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="h1 text-info">{{ chats_with_pending|length }}</div>
+                    <div class="text-muted">Chats with Media</div>
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>Warning:</strong> Downloading large amounts of media may take a long time and use significant bandwidth.
+                Files larger than 1 MB were skipped during sync - this tool downloads them without size limits.
+            </div>
+
+            <div class="d-grid gap-2">
+                <button type="button" class="btn btn-lg btn-success" id="startDownloadBtn" onclick="startBulkDownload()">
+                    <i class="bi bi-download"></i> Start Downloading All Files
+                </button>
+            </div>
+
+            <!-- Progress Section (hidden initially) -->
+            <div id="progressSection" class="mt-4" style="display: none;">
+                <h6><i class="bi bi-hourglass-split"></i> Download Progress</h6>
+                <div class="progress mb-2" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" id="downloadProgress" style="width: 0%;">
+                        0%
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between text-muted small">
+                    <span>Downloaded: <strong id="downloadedCount">0</strong></span>
+                    <span>Failed: <strong id="failedCount" class="text-danger">0</strong></span>
+                    <span>Remaining: <strong id="remainingCount">{{ total_count }}</strong></span>
+                </div>
+                <div id="downloadLog" class="mt-3 p-3 bg-light rounded" style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Breakdown by Chat -->
+    <div class="card shadow">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-list-ul"></i> Pending Downloads by Chat</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="list-group list-group-flush">
+                {% for item in chats_with_pending %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            {% if item.chat.chat_type == 'channel' %}
+                            <i class="bi bi-megaphone text-primary me-2"></i>
+                            {% elif item.chat.chat_type == 'supergroup' or item.chat.chat_type == 'group' %}
+                            <i class="bi bi-people text-success me-2"></i>
+                            {% else %}
+                            <i class="bi bi-person text-secondary me-2"></i>
+                            {% endif %}
+                            <strong>{{ item.chat.title }}</strong>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-primary me-2">{{ item.count }} files</span>
+                            {% if item.size > 0 %}
+                            <span class="badge bg-warning text-dark">{{ item.size|filesizeformat }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Pending Downloads -->
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-check-circle text-success" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">All Media Downloaded</h4>
+            <p class="text-muted">There are no pending media files to download.</p>
+            <a href="{% url 'telegram:sync_history' %}" class="btn btn-primary mt-2">
+                <i class="bi bi-clock-history"></i> View Sync History
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let isDownloading = false;
+let totalDownloaded = 0;
+let totalFailed = 0;
+let initialCount = {{ total_count }};
+
+async function startBulkDownload() {
+    if (isDownloading) return;
+
+    isDownloading = true;
+    document.getElementById('startDownloadBtn').disabled = true;
+    document.getElementById('startDownloadBtn').innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Downloading...';
+    document.getElementById('progressSection').style.display = 'block';
+
+    await downloadBatch();
+}
+
+async function downloadBatch() {
+    try {
+        const response = await fetch('{% url "telegram:start_bulk_download" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json',
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            totalDownloaded += data.downloaded;
+            totalFailed += data.failed;
+
+            // Update UI
+            document.getElementById('downloadedCount').textContent = totalDownloaded;
+            document.getElementById('failedCount').textContent = totalFailed;
+            document.getElementById('remainingCount').textContent = data.remaining;
+            document.getElementById('pendingCount').textContent = data.remaining;
+
+            // Update progress bar
+            const progress = Math.round(((initialCount - data.remaining) / initialCount) * 100);
+            document.getElementById('downloadProgress').style.width = progress + '%';
+            document.getElementById('downloadProgress').textContent = progress + '%';
+
+            // Add log entry
+            const log = document.getElementById('downloadLog');
+            const timestamp = new Date().toLocaleTimeString();
+            log.innerHTML += `<div>[${timestamp}] Downloaded ${data.downloaded} files, ${data.failed} failed, ${data.remaining} remaining</div>`;
+            log.scrollTop = log.scrollHeight;
+
+            // Continue if more files remain
+            if (data.remaining > 0) {
+                setTimeout(downloadBatch, 1000); // Small delay between batches
+            } else {
+                // Done
+                isDownloading = false;
+                document.getElementById('startDownloadBtn').disabled = false;
+                document.getElementById('startDownloadBtn').innerHTML = '<i class="bi bi-check-circle"></i> Download Complete!';
+                document.getElementById('startDownloadBtn').classList.remove('btn-success');
+                document.getElementById('startDownloadBtn').classList.add('btn-secondary');
+
+                log.innerHTML += `<div class="text-success fw-bold">[${timestamp}] All downloads complete! Total: ${totalDownloaded} downloaded, ${totalFailed} failed.</div>`;
+            }
+        } else {
+            throw new Error(data.error || 'Download failed');
+        }
+    } catch (error) {
+        const log = document.getElementById('downloadLog');
+        log.innerHTML += `<div class="text-danger">[Error] ${error.message}</div>`;
+
+        isDownloading = false;
+        document.getElementById('startDownloadBtn').disabled = false;
+        document.getElementById('startDownloadBtn').innerHTML = '<i class="bi bi-arrow-repeat"></i> Retry Download';
+    }
+}
+</script>
+{% endblock %}

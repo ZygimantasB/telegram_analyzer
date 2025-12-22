@@ -147,11 +147,23 @@
                                         </div>
                                         {% endif %}
                                     {% else %}
-                                    <!-- Media not downloaded yet -->
-                                    <div class="media-placeholder text-muted">
-                                        <i class="bi bi-file-earmark"></i>
-                                        <span>{{ msg.media_type }}</span>
-                                        <small>(not downloaded)</small>
+                                    <!-- Media not downloaded yet - show download button -->
+                                    <div class="media-placeholder" data-message-id="{{ msg.id }}">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <i class="bi bi-file-earmark text-muted"></i>
+                                            <span class="text-muted">{{ msg.media_type }}</span>
+                                            {% if msg.media_file_size %}
+                                            <small class="text-muted">({{ msg.media_file_size|filesizeformat }})</small>
+                                            {% else %}
+                                            <small class="text-muted">(size unknown)</small>
+                                            {% endif %}
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary mt-1 download-media-btn"
+                                                data-message-id="{{ msg.id }}"
+                                                onclick="downloadMedia({{ msg.id }}, this)">
+                                            <i class="bi bi-download"></i> Download
+                                        </button>
                                     </div>
                                     {% endif %}
                                 </div>

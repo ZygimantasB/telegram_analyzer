@@ -112,9 +112,17 @@
                                         </a>
                                         {% endif %}
                                     {% else %}
-                                    <span class="badge bg-light text-dark">
-                                        <i class="bi bi-file-earmark"></i> {{ msg.media_type }}
-                                    </span>
+                                    <div class="media-placeholder d-inline-flex align-items-center gap-1" data-message-id="{{ msg.id }}">
+                                        <span class="badge bg-light text-dark">
+                                            <i class="bi bi-file-earmark"></i> {{ msg.media_type }}
+                                        </span>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary py-0 px-1"
+                                                onclick="downloadMedia({{ msg.id }}, this)"
+                                                title="Download this media file">
+                                            <i class="bi bi-download"></i>
+                                        </button>
+                                    </div>
                                     {% endif %}
                                 </div>
                                 {% endif %}
@@ -147,4 +155,46 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function downloadMedia(messageId, button) {
+    button.disabled = true;
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch(`/telegram/media/${messageId}/trigger-download/`);
+        const data = await response.json();
+
+        if (data.success) {
+            button.innerHTML = '<i class="bi bi-check"></i>';
+            button.classList.remove('btn-outline-primary');
+            button.classList.add('btn-success');
+            button.title = 'Downloaded! Refresh to view.';
+        } else {
+            button.innerHTML = '<i class="bi bi-x"></i>';
+            button.classList.remove('btn-outline-primary');
+            button.classList.add('btn-danger');
+            button.title = data.error || 'Failed';
+            setTimeout(() => {
+                button.innerHTML = originalHtml;
+                button.classList.remove('btn-danger');
+                button.classList.add('btn-outline-primary');
+                button.disabled = false;
+            }, 3000);
+        }
+    } catch (error) {
+        button.innerHTML = '<i class="bi bi-x"></i>';
+        button.classList.add('btn-danger');
+        setTimeout(() => {
+            button.innerHTML = originalHtml;
+            button.classList.remove('btn-danger');
+            button.classList.add('btn-outline-primary');
+            button.disabled = false;
+        }, 3000);
+    }
+}
+</script>
 {% endblock %}

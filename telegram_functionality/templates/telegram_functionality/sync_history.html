@@ -16,6 +16,9 @@
             <p class="text-muted mb-0">View all past sync operations</p>
         </div>
         <div class="d-flex gap-2">
+            <a href="{% url 'telegram:bulk_download' %}" class="btn btn-success">
+                <i class="bi bi-cloud-download"></i> Download Media
+            </a>
             <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary">
                 <i class="bi bi-arrow-repeat"></i> Start New Sync
             </a>
