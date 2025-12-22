@@ -2,5 +2,5 @@
     min-width: 0;
 }
 .list-group-item {
-    border-left: 3px solid #dc3545;
+    border-left: 3px solid var(--danger);
 }

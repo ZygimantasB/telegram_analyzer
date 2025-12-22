@@ -712,3 +712,202 @@ body {
     max-height: 300px;
     overflow-y: auto;
 }
+
+/* ============================================
+   Dark Mode Text Color Fixes
+   ============================================ */
+
+[data-bs-theme="dark"] .text-muted {
+    color: var(--text-secondary) !important;
+}
+
+[data-bs-theme="dark"] .text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+[data-bs-theme="dark"] .text-dark {
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="dark"] .text-body {
+    color: var(--text-primary) !important;
+}
+
+[data-bs-theme="dark"] h1,
+[data-bs-theme="dark"] h2,
+[data-bs-theme="dark"] h3,
+[data-bs-theme="dark"] h4,
+[data-bs-theme="dark"] h5,
+[data-bs-theme="dark"] h6 {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] p {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] small {
+    color: var(--text-secondary);
+}
+
+[data-bs-theme="dark"] .list-group-item {
+    color: var(--text-primary);
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+[data-bs-theme="dark"] .list-group-item h6,
+[data-bs-theme="dark"] .list-group-item h5 {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .list-group-item small {
+    color: var(--text-secondary) !important;
+}
+
+[data-bs-theme="dark"] .list-group-item .text-muted {
+    color: var(--text-secondary) !important;
+}
+
+[data-bs-theme="dark"] .list-group-item-action:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* Chat and Message specific dark mode fixes */
+[data-bs-theme="dark"] .message-text {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .sender-name {
+    color: var(--accent-primary);
+}
+
+[data-bs-theme="dark"] .chat-title {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .chat-preview {
+    color: var(--text-secondary);
+}
+
+[data-bs-theme="dark"] .card-body {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .card-body p,
+[data-bs-theme="dark"] .card-body span {
+    color: inherit;
+}
+
+/* Nav pills in dark mode */
+[data-bs-theme="dark"] .nav-pills .nav-link {
+    color: var(--text-secondary);
+}
+
+[data-bs-theme="dark"] .nav-pills .nav-link:hover {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .nav-pills .nav-link.active {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+/* Table in dark mode */
+[data-bs-theme="dark"] .table {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .table td,
+[data-bs-theme="dark"] .table th {
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+[data-bs-theme="dark"] .table .text-muted {
+    color: var(--text-secondary) !important;
+}
+
+/* Accordion in dark mode */
+[data-bs-theme="dark"] .accordion-item {
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+[data-bs-theme="dark"] .accordion-button {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .accordion-button:not(.collapsed) {
+    background-color: var(--bg-tertiary);
+    color: var(--accent-primary);
+}
+
+[data-bs-theme="dark"] .accordion-body {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+}
+
+/* Ensure bg-light backgrounds work in dark mode */
+[data-bs-theme="dark"] .bg-light {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary);
+}
+
+/* Fix for deleted message backgrounds */
+[data-bs-theme="dark"] .list-group-item.bg-light {
+    background-color: var(--bg-secondary) !important;
+}
+
+/* Search result items */
+[data-bs-theme="dark"] .list-group-item .badge {
+    color: inherit;
+}
+
+[data-bs-theme="dark"] em.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Links in dark mode */
+[data-bs-theme="dark"] a.text-decoration-none:not(.btn) {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] a.text-decoration-none:not(.btn):hover {
+    color: var(--accent-primary);
+}
+
+/* Ensure form labels are visible in dark mode */
+[data-bs-theme="dark"] .form-label {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .form-check-label {
+    color: var(--text-primary);
+}
+
+/* Card title in dark mode */
+[data-bs-theme="dark"] .card-title {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .card-text {
+    color: var(--text-secondary);
+}
+
+/* All messages page - truncated text */
+[data-bs-theme="dark"] .text-truncate,
+[data-bs-theme="dark"] .text-truncate-2 {
+    color: var(--text-primary);
+}
+
+/* Info card styling */
+[data-bs-theme="dark"] .border-info {
+    border-color: var(--info) !important;
+}
+
+[data-bs-theme="dark"] .text-info {
+    color: var(--info) !important;
+}

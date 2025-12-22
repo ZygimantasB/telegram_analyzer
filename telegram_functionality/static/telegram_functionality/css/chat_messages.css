@@ -23,44 +23,46 @@
     padding: 0.5rem 0.75rem;
     border-radius: 1rem;
     position: relative;
+    color: var(--text-primary);
 }
 
 .message-incoming .message-bubble {
-    background-color: #f1f3f4;
+    background-color: var(--message-incoming);
     border-bottom-left-radius: 0.25rem;
 }
 
 .message-outgoing .message-bubble {
-    background-color: #dcf8c6;
+    background-color: var(--message-outgoing);
     border-bottom-right-radius: 0.25rem;
 }
 
 .message-deleted .message-bubble {
-    background-color: #ffebee;
-    border: 1px dashed #dc3545;
+    background-color: var(--message-deleted);
+    border: 1px dashed var(--danger);
 }
 
 .deleted-badge {
     font-size: 0.7rem;
-    color: #dc3545;
+    color: var(--danger);
     margin-bottom: 0.25rem;
 }
 
 .message-sender {
     font-weight: 600;
     font-size: 0.85rem;
-    color: #075e54;
+    color: var(--accent-primary);
     margin-bottom: 0.25rem;
 }
 
 .message-text {
     word-wrap: break-word;
     white-space: pre-wrap;
+    color: var(--text-primary);
 }
 
 .message-meta {
     font-size: 0.7rem;
-    color: #667781;
+    color: var(--text-secondary);
     text-align: right;
     margin-top: 0.25rem;
 }
@@ -75,14 +77,14 @@
 
 .message-reply {
     font-size: 0.8rem;
-    color: #667781;
-    border-left: 3px solid #25d366;
+    color: var(--text-secondary);
+    border-left: 3px solid var(--success);
     padding-left: 0.5rem;
     margin-bottom: 0.5rem;
 }
 
 .message-media {
-    background: rgba(0,0,0,0.05);
+    background: var(--bg-tertiary);
     padding: 0.5rem;
     border-radius: 0.5rem;
     margin-bottom: 0.5rem;
