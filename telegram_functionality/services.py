@@ -1036,7 +1036,7 @@ def run_background_sync(sync_task_id):
         from django.utils import timezone
         from django.conf import settings as django_settings
         from django.core.files import File
-        from .models import SyncTask, TelegramChat, TelegramMessage
+        from .models import SyncTask, TelegramChat, TelegramMessage, TelegramUser, ChatMembership
 
         sync_logger.info(f"BACKGROUND SYNC STARTED: Task #{sync_task_id} in thread {threading.current_thread().name}")
 
@@ -1218,6 +1218,87 @@ def run_background_sync(sync_task_id):
                         error_msg = messages_result.get("error", "Unknown error")
                         sync_logger.warning(f"Task #{sync_task_id}: Error syncing chat '{chat_title}': {error_msg}")
                         sync_task.add_log(f'  - Error: {error_msg}')
+
+                    # Sync members for groups, supergroups, and channels
+                    if chat_data['type'] in ('group', 'supergroup', 'channel'):
+                        try:
+                            sync_task.add_log(f'  - Syncing members...')
+                            participants_result = manager.get_chat_participants(session_string, chat_id)
+
+                            if participants_result['success']:
+                                participants = participants_result['participants']
+                                new_users = 0
+                                updated_users = 0
+
+                                for p in participants:
+                                    # Get or create TelegramUser
+                                    tg_user, user_created = TelegramUser.objects.get_or_create(
+                                        session=session,
+                                        user_id=p['user_id'],
+                                        defaults={
+                                            'username': p.get('username'),
+                                            'first_name': p.get('first_name'),
+                                            'last_name': p.get('last_name'),
+                                            'phone': p.get('phone'),
+                                            'is_bot': p.get('is_bot', False),
+                                            'is_verified': p.get('is_verified', False),
+                                            'is_premium': p.get('is_premium', False),
+                                            'is_scam': p.get('is_scam', False),
+                                            'is_fake': p.get('is_fake', False),
+                                            'is_deleted': p.get('is_deleted', False),
+                                            'status': p.get('status'),
+                                            'last_online': p.get('last_online'),
+                                            'photo_id': p.get('photo_id'),
+                                        }
+                                    )
+
+                                    if user_created:
+                                        new_users += 1
+                                    else:
+                                        # Update existing user info
+                                        tg_user.username = p.get('username')
+                                        tg_user.first_name = p.get('first_name')
+                                        tg_user.last_name = p.get('last_name')
+                                        tg_user.is_bot = p.get('is_bot', False)
+                                        tg_user.is_verified = p.get('is_verified', False)
+                                        tg_user.is_premium = p.get('is_premium', False)
+                                        tg_user.is_scam = p.get('is_scam', False)
+                                        tg_user.is_fake = p.get('is_fake', False)
+                                        tg_user.is_deleted = p.get('is_deleted', False)
+                                        tg_user.status = p.get('status')
+                                        tg_user.last_online = p.get('last_online')
+                                        tg_user.save()
+                                        updated_users += 1
+
+                                    # Get or create ChatMembership
+                                    membership, mem_created = ChatMembership.objects.get_or_create(
+                                        telegram_user=tg_user,
+                                        chat=telegram_chat,
+                                        defaults={
+                                            'role': p.get('role', 'member'),
+                                            'admin_title': p.get('admin_title'),
+                                            'admin_rights': p.get('admin_rights', {}),
+                                            'is_member': True,
+                                        }
+                                    )
+
+                                    if not mem_created:
+                                        # Update membership info
+                                        membership.role = p.get('role', 'member')
+                                        membership.admin_title = p.get('admin_title')
+                                        membership.admin_rights = p.get('admin_rights', {})
+                                        membership.is_member = True
+                                        membership.save()
+
+                                sync_task.add_log(f'  - Synced {len(participants)} members ({new_users} new, {updated_users} updated)')
+                                sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(participants)} members ({new_users} new)")
+                            else:
+                                error_msg = participants_result.get('error', 'Unknown error')
+                                sync_task.add_log(f'  - Members sync error: {error_msg}')
+                                sync_logger.debug(f"Task #{sync_task_id}: Could not sync members for '{chat_title}': {error_msg}")
+                        except Exception as member_err:
+                            sync_task.add_log(f'  - Members sync exception: {str(member_err)[:50]}')
+                            sync_logger.debug(f"Task #{sync_task_id}: Exception syncing members for '{chat_title}': {member_err}")
 
                 except Exception as chat_err:
                     # Log the error but continue with next chat
