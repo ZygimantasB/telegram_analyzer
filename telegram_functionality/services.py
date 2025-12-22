@@ -848,6 +848,182 @@ class TelegramClientManager:
 
         return loop.run_until_complete(_get_ids())
 
+    def get_chat_participants(self, session_string, chat_id, limit=None):
+        """Get all participants/members from a chat/group/channel.
+
+        Args:
+            session_string: Telegram session string
+            chat_id: Chat ID to get participants from
+            limit: Optional limit on number of participants
+
+        Returns:
+            Dict with success, participants list, and total count
+        """
+        loop = self._get_event_loop()
+        client = self.get_client(session_string)
+
+        async def _get_participants():
+            try:
+                from telethon.tl.types import (
+                    ChannelParticipantAdmin,
+                    ChannelParticipantCreator,
+                    ChannelParticipantBanned,
+                    ChannelParticipantSelf,
+                    ChatParticipantAdmin,
+                    ChatParticipantCreator,
+                    UserStatusOnline,
+                    UserStatusOffline,
+                    UserStatusRecently,
+                    UserStatusLastWeek,
+                    UserStatusLastMonth,
+                )
+                from telethon.tl.functions.channels import GetParticipantsRequest
+                from telethon.tl.types import ChannelParticipantsSearch
+
+                await client.connect()
+                entity = await client.get_entity(chat_id)
+
+                participants = []
+                offset = 0
+                batch_size = 100
+
+                # Get participants using iter_participants for better compatibility
+                async for user in client.iter_participants(entity, limit=limit):
+                    # Determine user status
+                    status = 'unknown'
+                    last_online = None
+
+                    if hasattr(user, 'status') and user.status:
+                        if isinstance(user.status, UserStatusOnline):
+                            status = 'online'
+                        elif isinstance(user.status, UserStatusOffline):
+                            status = 'offline'
+                            last_online = user.status.was_online
+                        elif isinstance(user.status, UserStatusRecently):
+                            status = 'recently'
+                        elif isinstance(user.status, UserStatusLastWeek):
+                            status = 'last_week'
+                        elif isinstance(user.status, UserStatusLastMonth):
+                            status = 'last_month'
+
+                    # Determine role
+                    role = 'member'
+                    admin_title = None
+                    admin_rights = {}
+
+                    if hasattr(user, 'participant'):
+                        p = user.participant
+                        if isinstance(p, (ChannelParticipantCreator, ChatParticipantCreator)):
+                            role = 'creator'
+                            if hasattr(p, 'rank'):
+                                admin_title = p.rank
+                        elif isinstance(p, (ChannelParticipantAdmin, ChatParticipantAdmin)):
+                            role = 'admin'
+                            if hasattr(p, 'rank'):
+                                admin_title = p.rank
+                            if hasattr(p, 'admin_rights'):
+                                rights = p.admin_rights
+                                admin_rights = {
+                                    'change_info': getattr(rights, 'change_info', False),
+                                    'post_messages': getattr(rights, 'post_messages', False),
+                                    'edit_messages': getattr(rights, 'edit_messages', False),
+                                    'delete_messages': getattr(rights, 'delete_messages', False),
+                                    'ban_users': getattr(rights, 'ban_users', False),
+                                    'invite_users': getattr(rights, 'invite_users', False),
+                                    'pin_messages': getattr(rights, 'pin_messages', False),
+                                    'add_admins': getattr(rights, 'add_admins', False),
+                                    'manage_call': getattr(rights, 'manage_call', False),
+                                }
+                        elif isinstance(p, ChannelParticipantBanned):
+                            role = 'banned'
+
+                    participant_data = {
+                        'user_id': user.id,
+                        'username': user.username,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'phone': user.phone if hasattr(user, 'phone') else None,
+                        'is_bot': user.bot if hasattr(user, 'bot') else False,
+                        'is_verified': user.verified if hasattr(user, 'verified') else False,
+                        'is_premium': user.premium if hasattr(user, 'premium') else False,
+                        'is_scam': user.scam if hasattr(user, 'scam') else False,
+                        'is_fake': user.fake if hasattr(user, 'fake') else False,
+                        'is_deleted': user.deleted if hasattr(user, 'deleted') else False,
+                        'status': status,
+                        'last_online': last_online,
+                        'role': role,
+                        'admin_title': admin_title,
+                        'admin_rights': admin_rights,
+                        'photo_id': user.photo.photo_id if hasattr(user, 'photo') and user.photo else None,
+                    }
+
+                    participants.append(participant_data)
+
+                return {
+                    'success': True,
+                    'participants': participants,
+                    'total': len(participants)
+                }
+
+            except Exception as e:
+                logger.error(f"Error getting chat participants: {e}")
+                return {'success': False, 'error': str(e)}
+            finally:
+                await client.disconnect()
+
+        return loop.run_until_complete(_get_participants())
+
+    def get_user_info(self, session_string, user_id):
+        """Get detailed info about a specific user.
+
+        Args:
+            session_string: Telegram session string
+            user_id: Telegram user ID
+
+        Returns:
+            Dict with user info
+        """
+        loop = self._get_event_loop()
+        client = self.get_client(session_string)
+
+        async def _get_user():
+            try:
+                from telethon.tl.functions.users import GetFullUserRequest
+
+                await client.connect()
+                full_user = await client(GetFullUserRequest(user_id))
+                user = full_user.users[0] if full_user.users else None
+
+                if not user:
+                    return {'success': False, 'error': 'User not found'}
+
+                bio = ''
+                if hasattr(full_user, 'full_user') and full_user.full_user:
+                    bio = full_user.full_user.about or ''
+
+                return {
+                    'success': True,
+                    'user': {
+                        'user_id': user.id,
+                        'username': user.username,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'phone': user.phone if hasattr(user, 'phone') else None,
+                        'is_bot': user.bot if hasattr(user, 'bot') else False,
+                        'is_verified': user.verified if hasattr(user, 'verified') else False,
+                        'is_premium': user.premium if hasattr(user, 'premium') else False,
+                        'bio': bio,
+                    }
+                }
+
+            except Exception as e:
+                logger.error(f"Error getting user info: {e}")
+                return {'success': False, 'error': str(e)}
+            finally:
+                await client.disconnect()
+
+        return loop.run_until_complete(_get_user())
+
 
 def run_background_sync(sync_task_id):
         """Run sync in background thread with progress updates.

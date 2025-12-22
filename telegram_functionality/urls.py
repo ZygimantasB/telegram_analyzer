@@ -125,4 +125,13 @@ urlpatterns = [
 
     # Audit Log
     path('audit-log/', views_advanced.audit_log_list, name='audit_log'),
+
+    # Members / Participants
+    path('members/', views_advanced.members_list, name='members_list'),
+    path('members/analytics/', views_advanced.members_analytics, name='members_analytics'),
+    path('members/export/', views_advanced.export_members, name='export_members'),
+    re_path(r'^members/chat/(?P<chat_id>-?\d+)/$', views_advanced.chat_members, name='chat_members'),
+    re_path(r'^members/chat/(?P<chat_id>-?\d+)/sync/$', views_advanced.sync_chat_members, name='sync_chat_members'),
+    re_path(r'^members/chat/(?P<chat_id>-?\d+)/export/$', views_advanced.export_members, name='export_chat_members'),
+    path('members/user/<int:user_id>/', views_advanced.user_detail, name='user_detail'),
 ]

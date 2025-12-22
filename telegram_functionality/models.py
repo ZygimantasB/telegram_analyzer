@@ -276,6 +276,150 @@ class TelegramMessage(models.Model):
 
 
 # ============================================
+# Telegram Users / Participants
+# ============================================
+
+def user_photo_path(instance, filename):
+    """Generate upload path for user profile photos."""
+    return f'telegram_users/{instance.user_id}/{filename}'
+
+
+class TelegramUser(models.Model):
+    """Model to store Telegram users seen in chats."""
+
+    session = models.ForeignKey(
+        TelegramSession,
+        on_delete=models.CASCADE,
+        related_name='telegram_users'
+    )
+    user_id = models.BigIntegerField()
+    username = models.CharField(max_length=100, blank=True, null=True)
+    first_name = models.CharField(max_length=100, blank=True, null=True)
+    last_name = models.CharField(max_length=100, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+
+    # User flags
+    is_bot = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)
+    is_premium = models.BooleanField(default=False)
+    is_scam = models.BooleanField(default=False)
+    is_fake = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
+
+    # Profile photo
+    photo = models.ImageField(upload_to=user_photo_path, blank=True, null=True)
+    photo_id = models.BigIntegerField(null=True, blank=True)  # To track if photo changed
+
+    # Status
+    last_online = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=50, blank=True, null=True)  # online, offline, recently, etc.
+
+    # Bio/About
+    bio = models.TextField(blank=True, default='')
+
+    # Tracking
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Telegram User'
+        verbose_name_plural = 'Telegram Users'
+        unique_together = ['session', 'user_id']
+        ordering = ['first_name', 'last_name']
+        indexes = [
+            models.Index(fields=['session', 'user_id']),
+            models.Index(fields=['username']),
+        ]
+
+    def __str__(self):
+        name = self.get_display_name()
+        return f"{name} ({self.user_id})"
+
+    def get_display_name(self):
+        """Get a user-friendly display name."""
+        if self.first_name:
+            name = self.first_name
+            if self.last_name:
+                name += f" {self.last_name}"
+            return name
+        if self.username:
+            return f"@{self.username}"
+        return f"User {self.user_id}"
+
+    @property
+    def full_name(self):
+        """Get full name."""
+        parts = []
+        if self.first_name:
+            parts.append(self.first_name)
+        if self.last_name:
+            parts.append(self.last_name)
+        return ' '.join(parts) or None
+
+
+class ChatMembership(models.Model):
+    """Model to track user membership in chats/groups."""
+
+    ROLE_CHOICES = [
+        ('creator', 'Creator'),
+        ('admin', 'Administrator'),
+        ('member', 'Member'),
+        ('restricted', 'Restricted'),
+        ('left', 'Left'),
+        ('kicked', 'Kicked'),
+        ('banned', 'Banned'),
+    ]
+
+    telegram_user = models.ForeignKey(
+        TelegramUser,
+        on_delete=models.CASCADE,
+        related_name='memberships'
+    )
+    chat = models.ForeignKey(
+        TelegramChat,
+        on_delete=models.CASCADE,
+        related_name='memberships'
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='member')
+
+    # Admin info
+    admin_title = models.CharField(max_length=100, blank=True, null=True)  # Custom admin title
+    admin_rights = models.JSONField(default=dict, blank=True)  # Store admin permissions
+
+    # Membership status
+    is_member = models.BooleanField(default=True)
+    joined_at = models.DateTimeField(null=True, blank=True)
+    left_at = models.DateTimeField(null=True, blank=True)
+    invited_by = models.ForeignKey(
+        TelegramUser,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='invitees'
+    )
+
+    # Restrictions (if restricted)
+    restricted_until = models.DateTimeField(null=True, blank=True)
+    restriction_reason = models.CharField(max_length=255, blank=True, null=True)
+
+    # Tracking
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Chat Membership'
+        verbose_name_plural = 'Chat Memberships'
+        unique_together = ['telegram_user', 'chat']
+        ordering = ['-role', 'telegram_user__first_name']
+        indexes = [
+            models.Index(fields=['chat', 'role']),
+            models.Index(fields=['telegram_user', 'is_member']),
+        ]
+
+    def __str__(self):
+        return f"{self.telegram_user.get_display_name()} in {self.chat.title} ({self.role})"
+
+
+# ============================================
 # Organization Features
 # ============================================
 

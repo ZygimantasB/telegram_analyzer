@@ -25,9 +25,11 @@ from .models import (
     ChatFolder, ChatFolderMembership, Tag, MessageTagging,
     MessageBookmark, MessageNote, MessageEdit,
     KeywordAlert, AlertTrigger, DeletionAlertConfig,
-    ScheduledBackup, BackupHistory, AuditLog, MediaHash
+    ScheduledBackup, BackupHistory, AuditLog, MediaHash,
+    TelegramUser, ChatMembership
 )
 from .analytics import AnalyticsService
+from .services import telegram_manager
 from .views import get_current_session, get_session_or_redirect, get_all_user_sessions
 
 
@@ -1537,3 +1539,387 @@ def deletion_alert_config_view(request):
     }
 
     return render(request, 'telegram_functionality/alerts/deletion_config.html', context)
+
+
+# ============================================
+# Members / Participants Views
+# ============================================
+
+@login_required
+def members_list(request):
+    """List all known Telegram users across all chats."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    # Filter options
+    search_query = request.GET.get('q', '')
+    role_filter = request.GET.get('role', '')
+    chat_filter = request.GET.get('chat', '')
+    sort_by = request.GET.get('sort', 'name')
+
+    # Get all users with membership info
+    users = TelegramUser.objects.filter(session=session)
+
+    # Apply filters
+    if search_query:
+        users = users.filter(
+            Q(first_name__icontains=search_query) |
+            Q(last_name__icontains=search_query) |
+            Q(username__icontains=search_query)
+        )
+
+    if role_filter:
+        users = users.filter(memberships__role=role_filter)
+
+    if chat_filter:
+        users = users.filter(memberships__chat_id=int(chat_filter))
+
+    # Sort
+    if sort_by == 'recent':
+        users = users.order_by('-last_updated')
+    elif sort_by == 'username':
+        users = users.order_by('username')
+    else:
+        users = users.order_by('first_name', 'last_name')
+
+    users = users.distinct()
+
+    # Paginate
+    paginator = Paginator(users, 50)
+    page = request.GET.get('page', 1)
+    users_page = paginator.get_page(page)
+
+    # Calculate message counts for displayed users
+    user_ids = [u.user_id for u in users_page]
+    message_counts = {}
+    if user_ids:
+        counts = TelegramMessage.objects.filter(
+            chat__session=session,
+            sender_id__in=user_ids
+        ).values('sender_id').annotate(count=Count('id'))
+        message_counts = {c['sender_id']: c['count'] for c in counts}
+
+    # Get chats for filter dropdown
+    chats = TelegramChat.objects.filter(
+        session=session,
+        chat_type__in=['group', 'supergroup', 'channel']
+    ).order_by('title')
+
+    context = {
+        'users': users_page,
+        'message_counts': message_counts,
+        'chats': chats,
+        'search_query': search_query,
+        'role_filter': role_filter,
+        'chat_filter': chat_filter,
+        'sort_by': sort_by,
+        'total_users': TelegramUser.objects.filter(session=session).count(),
+        'session': session,
+        'all_sessions': get_all_user_sessions(request.user),
+    }
+
+    return render(request, 'telegram_functionality/members/list.html', context)
+
+
+@login_required
+def chat_members(request, chat_id):
+    """View members of a specific chat/group."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    chat = get_object_or_404(TelegramChat, session=session, chat_id=chat_id)
+
+    # Get memberships for this chat
+    memberships = ChatMembership.objects.filter(
+        chat=chat
+    ).select_related('telegram_user').order_by('telegram_user__first_name')
+
+    # Sort by role priority
+    role_order = {'creator': 0, 'admin': 1, 'member': 2, 'restricted': 3, 'left': 4, 'kicked': 5, 'banned': 6}
+    memberships = sorted(memberships, key=lambda m: (role_order.get(m.role, 99), m.telegram_user.first_name or ''))
+
+    # Calculate message counts for members
+    member_stats = {}
+    message_counts = TelegramMessage.objects.filter(
+        chat=chat
+    ).values('sender_id').annotate(
+        count=Count('id')
+    )
+    for mc in message_counts:
+        if mc['sender_id']:
+            member_stats[mc['sender_id']] = mc['count']
+
+    context = {
+        'chat': chat,
+        'memberships': memberships,
+        'member_stats': member_stats,
+        'total_members': len(memberships),
+        'admin_count': sum(1 for m in memberships if m.role in ['creator', 'admin']),
+        'session': session,
+        'all_sessions': get_all_user_sessions(request.user),
+    }
+
+    return render(request, 'telegram_functionality/members/chat_members.html', context)
+
+
+@login_required
+def sync_chat_members(request, chat_id):
+    """Sync members from Telegram for a specific chat."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return JsonResponse({'error': 'No session'}, status=400)
+
+    chat = get_object_or_404(TelegramChat, session=session, chat_id=chat_id)
+
+    # Only allow syncing groups/channels
+    if chat.chat_type not in ['group', 'supergroup', 'channel']:
+        return JsonResponse({'error': 'Cannot sync members for private chats'}, status=400)
+
+    session_string = session.get_session_string()
+    result = telegram_manager.get_chat_participants(session_string, chat_id)
+
+    if not result['success']:
+        return JsonResponse({'error': result.get('error', 'Failed to get participants')}, status=500)
+
+    # Save participants to database
+    synced_count = 0
+    updated_count = 0
+
+    for p in result['participants']:
+        # Get or create TelegramUser
+        tg_user, user_created = TelegramUser.objects.update_or_create(
+            session=session,
+            user_id=p['user_id'],
+            defaults={
+                'username': p['username'],
+                'first_name': p['first_name'],
+                'last_name': p['last_name'],
+                'phone': p.get('phone'),
+                'is_bot': p.get('is_bot', False),
+                'is_verified': p.get('is_verified', False),
+                'is_premium': p.get('is_premium', False),
+                'is_scam': p.get('is_scam', False),
+                'is_fake': p.get('is_fake', False),
+                'is_deleted': p.get('is_deleted', False),
+                'status': p.get('status'),
+                'last_online': p.get('last_online'),
+            }
+        )
+
+        # Get or create ChatMembership
+        membership, mem_created = ChatMembership.objects.update_or_create(
+            telegram_user=tg_user,
+            chat=chat,
+            defaults={
+                'role': p.get('role', 'member'),
+                'admin_title': p.get('admin_title'),
+                'admin_rights': p.get('admin_rights', {}),
+                'is_member': True,
+            }
+        )
+
+        if user_created or mem_created:
+            synced_count += 1
+        else:
+            updated_count += 1
+
+    # Update chat members count
+    chat.members_count = result['total']
+    chat.save()
+
+    log_audit(request, 'sync_messages', f'Synced {synced_count} members for {chat.title}', session=session, chat=chat)
+
+    return JsonResponse({
+        'success': True,
+        'synced': synced_count,
+        'updated': updated_count,
+        'total': result['total']
+    })
+
+
+@login_required
+def user_detail(request, user_id):
+    """View details and analytics for a specific user."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    tg_user = get_object_or_404(TelegramUser, session=session, user_id=user_id)
+
+    # Get all memberships
+    memberships = ChatMembership.objects.filter(
+        telegram_user=tg_user
+    ).select_related('chat')
+
+    # Get message stats
+    messages = TelegramMessage.objects.filter(
+        chat__session=session,
+        sender_id=user_id
+    )
+
+    total_messages = messages.count()
+
+    # Messages by chat
+    messages_by_chat = messages.values(
+        'chat__title', 'chat__chat_id'
+    ).annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+
+    # Activity over time (last 30 days)
+    from django.db.models.functions import TruncDate
+    daily_activity = messages.filter(
+        date__gte=timezone.now() - timedelta(days=30)
+    ).annotate(
+        day=TruncDate('date')
+    ).values('day').annotate(
+        count=Count('id')
+    ).order_by('day')
+
+    # Most active hours
+    from django.db.models.functions import ExtractHour
+    hourly_activity = messages.annotate(
+        hour=ExtractHour('date')
+    ).values('hour').annotate(
+        count=Count('id')
+    ).order_by('hour')
+
+    context = {
+        'tg_user': tg_user,
+        'memberships': memberships,
+        'total_messages': total_messages,
+        'messages_by_chat': list(messages_by_chat),
+        'daily_activity': json.dumps(list(daily_activity), default=str),
+        'hourly_activity': list(hourly_activity),
+        'recent_messages': messages.order_by('-date')[:20],
+        'session': session,
+        'all_sessions': get_all_user_sessions(request.user),
+    }
+
+    return render(request, 'telegram_functionality/members/user_detail.html', context)
+
+
+@login_required
+def members_analytics(request):
+    """Analytics dashboard for group members."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    chat_id = request.GET.get('chat')
+    chat = None
+    if chat_id:
+        chat = TelegramChat.objects.filter(session=session, id=int(chat_id)).first()
+
+    # Base queryset
+    if chat:
+        memberships = ChatMembership.objects.filter(chat=chat)
+        messages = TelegramMessage.objects.filter(chat=chat)
+    else:
+        memberships = ChatMembership.objects.filter(chat__session=session)
+        messages = TelegramMessage.objects.filter(chat__session=session)
+
+    # Stats
+    total_users = memberships.values('telegram_user').distinct().count()
+    total_bots = TelegramUser.objects.filter(
+        session=session, is_bot=True
+    ).count()
+    total_premium = TelegramUser.objects.filter(
+        session=session, is_premium=True
+    ).count()
+    admin_count = memberships.filter(role__in=['creator', 'admin']).count()
+
+    # Top contributors
+    top_contributors = messages.values(
+        'sender_id', 'sender_name'
+    ).annotate(
+        count=Count('id')
+    ).order_by('-count')[:20]
+
+    # Role distribution
+    role_dist = memberships.values('role').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    # User activity status
+    status_dist = TelegramUser.objects.filter(
+        session=session
+    ).values('status').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    # Chats for filter
+    chats = TelegramChat.objects.filter(
+        session=session,
+        chat_type__in=['group', 'supergroup', 'channel']
+    ).order_by('title')
+
+    context = {
+        'chat': chat,
+        'chats': chats,
+        'stats': {
+            'total_users': total_users,
+            'total_bots': total_bots,
+            'total_premium': total_premium,
+            'admin_count': admin_count,
+        },
+        'top_contributors': list(top_contributors),
+        'role_distribution': json.dumps(list(role_dist)),
+        'status_distribution': list(status_dist),
+        'session': session,
+        'all_sessions': get_all_user_sessions(request.user),
+    }
+
+    return render(request, 'telegram_functionality/members/analytics.html', context)
+
+
+@login_required
+def export_members(request, chat_id=None):
+    """Export members list to CSV."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return HttpResponse('No session', status=400)
+
+    if chat_id:
+        chat = get_object_or_404(TelegramChat, session=session, chat_id=chat_id)
+        users = TelegramUser.objects.filter(
+            memberships__chat=chat
+        ).distinct()
+        filename = f'members_{chat.title}_{timezone.now().strftime("%Y%m%d")}.csv'
+    else:
+        users = TelegramUser.objects.filter(session=session)
+        filename = f'all_users_{timezone.now().strftime("%Y%m%d")}.csv'
+
+    # Create CSV
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        'User ID', 'Username', 'First Name', 'Last Name',
+        'Is Bot', 'Is Premium', 'Is Verified', 'Status',
+        'Last Online', 'First Seen'
+    ])
+
+    for user in users:
+        writer.writerow([
+            user.user_id,
+            user.username or '',
+            user.first_name or '',
+            user.last_name or '',
+            user.is_bot,
+            user.is_premium,
+            user.is_verified,
+            user.status or '',
+            user.last_online.isoformat() if user.last_online else '',
+            user.first_seen_at.isoformat(),
+        ])
+
+    response = HttpResponse(output.getvalue(), content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    log_audit(request, 'export_data', f'Exported {users.count()} members', session=session)
+
+    return response

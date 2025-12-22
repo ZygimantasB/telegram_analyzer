@@ -1,0 +1,222 @@
+{% extends 'base.html' %}
+
+{% block title %}Members Analytics - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-bar-chart-line"></i> Members Analytics</h2>
+            <p class="text-muted mb-0">Analyze group member activity and composition</p>
+        </div>
+        <div class="d-flex gap-2">
+            <select class="form-select" id="chatFilter" style="width: auto;" onchange="filterByChat()">
+                <option value="">All Chats</option>
+                {% for c in chats %}
+                <option value="{{ c.id }}" {% if chat and chat.id == c.id %}selected{% endif %}>
+                    {{ c.title|truncatechars:30 }}
+                </option>
+                {% endfor %}
+            </select>
+            <a href="{% url 'telegram:members_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Members List
+            </a>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats.total_users }}</h3>
+                    <p class="mb-0">Total Users</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body text-center">
+                    <h3>{{ stats.admin_count }}</h3>
+                    <p class="mb-0">Admins</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats.total_premium }}</h3>
+                    <p class="mb-0">Premium Users</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats.total_bots }}</h3>
+                    <p class="mb-0">Bots</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Role Distribution -->
+        <div class="col-md-6 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart"></i> Role Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="roleChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Status Distribution -->
+        <div class="col-md-6 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-activity"></i> Activity Status</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush">
+                        {% for status in status_distribution %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                {% if status.status == 'online' %}
+                                <span class="badge bg-success">Online</span>
+                                {% elif status.status == 'recently' %}
+                                <span class="badge bg-info">Recently</span>
+                                {% elif status.status == 'last_week' %}
+                                <span class="badge bg-warning">Last Week</span>
+                                {% elif status.status == 'last_month' %}
+                                <span class="badge bg-secondary">Last Month</span>
+                                {% else %}
+                                <span class="badge bg-light text-dark">{{ status.status|default:"Unknown" }}</span>
+                                {% endif %}
+                            </span>
+                            <span class="badge bg-primary">{{ status.count }}</span>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-center text-muted">
+                            No status data
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Contributors -->
+    <div class="card shadow">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-trophy"></i> Top Contributors</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50">#</th>
+                            <th>User</th>
+                            <th class="text-end">Messages</th>
+                            <th width="30%">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for contributor in top_contributors %}
+                        <tr>
+                            <td>
+                                {% if forloop.counter == 1 %}
+                                <span class="text-warning fs-5"><i class="bi bi-trophy-fill"></i></span>
+                                {% elif forloop.counter == 2 %}
+                                <span class="text-secondary fs-5"><i class="bi bi-trophy-fill"></i></span>
+                                {% elif forloop.counter == 3 %}
+                                <span style="color: #cd7f32;" class="fs-5"><i class="bi bi-trophy-fill"></i></span>
+                                {% else %}
+                                {{ forloop.counter }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if contributor.sender_id %}
+                                <a href="{% url 'telegram:user_detail' contributor.sender_id %}" class="text-decoration-none">
+                                    {{ contributor.sender_name|default:"Unknown" }}
+                                </a>
+                                {% else %}
+                                {{ contributor.sender_name|default:"Unknown" }}
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <span class="badge bg-primary">{{ contributor.count }}</span>
+                            </td>
+                            <td>
+                                <div class="progress" style="height: 20px;">
+                                    {% widthratio contributor.count top_contributors.0.count 100 as percentage %}
+                                    <div class="progress-bar" style="width: {{ percentage }}%;">
+                                        {{ percentage }}%
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">No message data</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+function filterByChat() {
+    const chatId = document.getElementById('chatFilter').value;
+    if (chatId) {
+        window.location.href = `?chat=${chatId}`;
+    } else {
+        window.location.href = '{% url "telegram:members_analytics" %}';
+    }
+}
+
+// Role Distribution Chart
+const roleData = {{ role_distribution|safe }};
+
+if (roleData.length > 0) {
+    new Chart(document.getElementById('roleChart'), {
+        type: 'doughnut',
+        data: {
+            labels: roleData.map(r => r.role.charAt(0).toUpperCase() + r.role.slice(1)),
+            datasets: [{
+                data: roleData.map(r => r.count),
+                backgroundColor: [
+                    '#ffc107', // creator - gold
+                    '#0d6efd', // admin - blue
+                    '#6c757d', // member - gray
+                    '#dc3545', // restricted - red
+                    '#adb5bd', // left - light gray
+                    '#343a40', // kicked - dark
+                    '#212529', // banned - darker
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+} else {
+    document.getElementById('roleChart').parentElement.innerHTML = '<p class="text-center text-muted py-4">No role data available</p>';
+}
+</script>
+{% endblock %}
