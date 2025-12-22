@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ tag.name }} - Tagged Messages{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>
+                <span class="badge" style="background-color: {{ tag.color }};">
+                    <i class="bi bi-tag-fill"></i> {{ tag.name }}
+                </span>
+            </h2>
+            <p class="text-muted mb-0">{{ messages.paginator.count }} tagged messages</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'telegram:tags_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> All Tags
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="card shadow">
+        <div class="card-body p-0">
+            <div class="list-group list-group-flush">
+                {% for msg in messages %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <a href="{% url 'telegram:chat_messages' msg.message.chat.chat_id %}" class="text-decoration-none">
+                                    <strong>{{ msg.message.chat.title|truncatechars:30 }}</strong>
+                                </a>
+                                <small class="text-muted">{{ msg.message.date|date:"M d, Y H:i" }}</small>
+                            </div>
+                            <p class="mb-2">
+                                {% if msg.message.text %}
+                                    {{ msg.message.text|truncatechars:300 }}
+                                {% else %}
+                                    <em class="text-muted">[Media message]</em>
+                                {% endif %}
+                            </p>
+                            <div class="d-flex align-items-center gap-2">
+                                <small class="text-muted">
+                                    <i class="bi bi-person"></i> {{ msg.message.sender_name|default:"Unknown" }}
+                                </small>
+                                {% if msg.message.has_media %}
+                                <small class="text-muted">
+                                    <i class="bi bi-paperclip"></i> Has media
+                                </small>
+                                {% endif %}
+                                <!-- Other tags on this message -->
+                                {% for other_tag in msg.message.tags.all %}
+                                    {% if other_tag.tag.id != tag.id %}
+                                    <span class="badge" style="background-color: {{ other_tag.tag.color }};">
+                                        {{ other_tag.tag.name }}
+                                    </span>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-danger" onclick="removeTag({{ msg.id }}, this)" title="Remove tag">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if messages.has_other_pages %}
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0">
+                    {% if messages.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ messages.previous_page_number }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item active">
+                        <span class="page-link">Page {{ messages.number }} of {{ messages.paginator.num_pages }}</span>
+                    </li>
+                    {% if messages.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ messages.next_page_number }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-tag text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">No Messages Tagged</h4>
+            <p class="text-muted">Tag messages from the chat view to see them here</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function removeTag(taggingId, btn) {
+    if (!confirm('Remove this tag from the message?')) return;
+
+    const response = await fetch(`{% url 'telegram:remove_tagging' 0 %}`.replace('/0/', `/${taggingId}/`), {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+
+    if (response.ok) {
+        btn.closest('.list-group-item').remove();
+    }
+}
+</script>
+{% endblock %}

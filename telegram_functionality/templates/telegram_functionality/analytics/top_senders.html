@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+
+{% block title %}Top Senders - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sender-rank {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-weight: bold;
+    }
+    .rank-1 { background: linear-gradient(135deg, #ffd700, #ffb700); color: #000; }
+    .rank-2 { background: linear-gradient(135deg, #c0c0c0, #a0a0a0); color: #000; }
+    .rank-3 { background: linear-gradient(135deg, #cd7f32, #b06820); color: #fff; }
+    .rank-other { background: var(--bs-secondary-bg); color: var(--bs-body-color); }
+    .progress-bar-animated {
+        animation: progress-bar-stripes 1s linear infinite;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-trophy"></i> Top Senders</h2>
+            <p class="text-muted mb-0">Most active participants across your chats</p>
+        </div>
+        <div class="d-flex gap-2">
+            <select class="form-select" id="chatFilter" style="width: auto;" onchange="filterByChat()">
+                <option value="">All Chats</option>
+                {% for chat in chats %}
+                <option value="{{ chat.id }}" {% if selected_chat == chat.id %}selected{% endif %}>
+                    {{ chat.title|truncatechars:30 }}
+                </option>
+                {% endfor %}
+            </select>
+            <select class="form-select" id="periodFilter" style="width: auto;" onchange="filterByChat()">
+                <option value="30" {% if period == 30 %}selected{% endif %}>Last 30 days</option>
+                <option value="90" {% if period == 90 %}selected{% endif %}>Last 90 days</option>
+                <option value="365" {% if period == 365 %}selected{% endif %}>Last year</option>
+                <option value="0" {% if period == 0 %}selected{% endif %}>All time</option>
+            </select>
+            <a href="{% url 'telegram:analytics' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Top Senders List -->
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0">Leaderboard</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for sender in top_senders %}
+                        <div class="list-group-item">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="sender-rank {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}rank-other{% endif %}">
+                                    {{ forloop.counter }}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <strong>{{ sender.sender_name|default:"Unknown" }}</strong>
+                                        <span class="badge bg-primary">{{ sender.count }} messages</span>
+                                    </div>
+                                    <div class="progress" style="height: 6px;">
+                                        <div class="progress-bar" style="width: {{ sender.percentage }}%;"></div>
+                                    </div>
+                                    <small class="text-muted">{{ sender.percentage|floatformat:1 }}% of total messages</small>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-center py-4 text-muted">
+                            No message data available
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Sidebar -->
+        <div class="col-lg-4">
+            <div class="card shadow mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart"></i> Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="sendersPieChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Total Senders</span>
+                        <strong>{{ stats.total_senders }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Total Messages</span>
+                        <strong>{{ stats.total_messages }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Avg per Sender</span>
+                        <strong>{{ stats.avg_per_sender|floatformat:1 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Top 10 Share</span>
+                        <strong>{{ stats.top10_percentage|floatformat:1 }}%</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+function filterByChat() {
+    const chat = document.getElementById('chatFilter').value;
+    const period = document.getElementById('periodFilter').value;
+    let url = '{% url "telegram:analytics_top_senders" %}?';
+    if (chat) url += `chat=${chat}&`;
+    if (period) url += `period=${period}`;
+    window.location.href = url;
+}
+
+// Pie Chart
+const topSendersData = {{ chart_data|safe }};
+
+new Chart(document.getElementById('sendersPieChart'), {
+    type: 'doughnut',
+    data: {
+        labels: topSendersData.labels.slice(0, 5).concat(['Others']),
+        datasets: [{
+            data: topSendersData.values.slice(0, 5).concat([topSendersData.others || 0]),
+            backgroundColor: [
+                '#0d6efd',
+                '#6610f2',
+                '#6f42c1',
+                '#d63384',
+                '#dc3545',
+                '#6c757d'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    boxWidth: 12
+                }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

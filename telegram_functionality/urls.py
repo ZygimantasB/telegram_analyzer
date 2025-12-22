@@ -1,5 +1,6 @@
 from django.urls import path, re_path
 from . import views
+from . import views_advanced
 
 app_name = 'telegram'
 
@@ -53,4 +54,75 @@ urlpatterns = [
     # Search
     path('search/', views.search_messages, name='search'),
     path('search/chats/', views.search_chats, name='search_chats'),
+
+    # Analytics
+    path('analytics/', views_advanced.analytics_dashboard, name='analytics'),
+    path('analytics/word-cloud/', views_advanced.analytics_word_cloud, name='analytics_word_cloud'),
+    path('analytics/top-senders/', views_advanced.analytics_top_senders, name='analytics_top_senders'),
+    path('analytics/heatmap/', views_advanced.analytics_activity_heatmap, name='analytics_heatmap'),
+    path('analytics/api/<str:stat_type>/', views_advanced.analytics_api, name='analytics_api'),
+
+    # Export
+    path('export/', views_advanced.export_page, name='export'),
+    path('export/json/', views_advanced.export_json, name='export_json'),
+    path('export/csv/', views_advanced.export_csv, name='export_csv'),
+    path('export/html/', views_advanced.export_html, name='export_html'),
+
+    # Bookmarks
+    path('bookmarks/', views_advanced.bookmarks_list, name='bookmarks'),
+    path('bookmarks/<int:message_id>/toggle/', views_advanced.toggle_bookmark, name='toggle_bookmark'),
+    path('bookmarks/<int:bookmark_id>/note/', views_advanced.update_bookmark_note, name='update_bookmark_note'),
+    path('bookmarks/<int:bookmark_id>/delete/', views_advanced.delete_bookmark, name='delete_bookmark'),
+
+    # Tags
+    path('tags/', views_advanced.tags_list, name='tags'),
+    path('tags/create/', views_advanced.create_tag, name='create_tag'),
+    path('tags/<int:tag_id>/delete/', views_advanced.delete_tag, name='delete_tag'),
+    path('tags/<int:tag_id>/messages/', views_advanced.tagged_messages, name='tagged_messages'),
+    path('messages/<int:message_id>/tag/', views_advanced.tag_message, name='tag_message'),
+
+    # Folders
+    path('folders/', views_advanced.folders_list, name='folders_list'),
+    path('folders/create/', views_advanced.create_folder, name='create_folder'),
+    path('folders/<int:folder_id>/delete/', views_advanced.delete_folder, name='delete_folder'),
+    path('folders/<int:folder_id>/chats/', views_advanced.folder_chats_view, name='folder_chats'),
+    path('folders/<int:folder_id>/add-chat/', views_advanced.folder_add_chats, name='folder_add_chat'),
+    path('folders/<int:folder_id>/remove-chat/', views_advanced.folder_remove_chat, name='folder_remove_chat'),
+
+    # Notes
+    path('notes/', views_advanced.notes_list, name='notes'),
+    path('notes/<int:message_id>/add/', views_advanced.add_note, name='add_note'),
+    path('notes/<int:note_id>/delete/', views_advanced.delete_note, name='delete_note'),
+
+    # Media Gallery
+    path('gallery/', views_advanced.media_gallery, name='media_gallery'),
+    path('gallery/slideshow/', views_advanced.media_slideshow, name='media_slideshow'),
+    path('gallery/duplicates/', views_advanced.find_duplicates, name='find_duplicates'),
+    path('gallery/compute-hashes/', views_advanced.compute_media_hashes, name='compute_media_hashes'),
+
+    # Keyword Alerts
+    path('alerts/', views_advanced.keyword_alerts_list, name='keyword_alerts'),
+    path('alerts/create/', views_advanced.create_keyword_alert, name='create_keyword_alert'),
+    path('alerts/<int:alert_id>/toggle/', views_advanced.toggle_keyword_alert, name='toggle_keyword_alert'),
+    path('alerts/<int:alert_id>/delete/', views_advanced.delete_keyword_alert, name='delete_keyword_alert'),
+    path('alerts/<int:alert_id>/triggers/', views_advanced.alert_triggers_list, name='alert_triggers'),
+    path('alerts/triggers/', views_advanced.all_triggers_list, name='all_triggers'),
+    path('alerts/triggers/<int:trigger_id>/read/', views_advanced.mark_trigger_read, name='mark_trigger_read'),
+    path('alerts/triggers/clear/', views_advanced.clear_all_triggers, name='clear_triggers'),
+    path('alerts/deletion-config/', views_advanced.deletion_alert_config_view, name='deletion_alert_config'),
+
+    # Scheduled Backups
+    path('backups/', views_advanced.scheduled_backups_list, name='scheduled_backups'),
+    path('backups/create/', views_advanced.create_scheduled_backup, name='create_backup_schedule'),
+    path('backups/<int:backup_id>/toggle/', views_advanced.toggle_scheduled_backup, name='toggle_scheduled_backup'),
+    path('backups/<int:backup_id>/delete/', views_advanced.delete_scheduled_backup, name='delete_scheduled_backup'),
+    path('backups/<int:backup_id>/run/', views_advanced.run_backup_now, name='run_backup_now'),
+    path('backups/download/<int:history_id>/', views_advanced.download_backup, name='download_backup'),
+
+    # Tags additional
+    path('tags/tagging/<int:tagging_id>/remove/', views_advanced.remove_tagging, name='remove_tagging'),
+    path('tags/list/', views_advanced.tags_list, name='tags_list'),
+
+    # Audit Log
+    path('audit-log/', views_advanced.audit_log_list, name='audit_log'),
 ]

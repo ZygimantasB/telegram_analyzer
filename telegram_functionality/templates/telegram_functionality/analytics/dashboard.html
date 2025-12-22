@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Analytics - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        transition: transform 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-graph-up"></i> Analytics Dashboard</h2>
+            <p class="text-muted mb-0">Insights from your Telegram data</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'telegram:analytics_word_cloud' %}" class="btn btn-outline-primary">
+                <i class="bi bi-cloud"></i> Word Cloud
+            </a>
+            <a href="{% url 'telegram:analytics_heatmap' %}" class="btn btn-outline-success">
+                <i class="bi bi-calendar3"></i> Activity Heatmap
+            </a>
+            <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Overview Stats -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card stat-card h-100 border-primary">
+                <div class="card-body text-center">
+                    <i class="bi bi-chat-dots text-primary" style="font-size: 2rem;"></i>
+                    <div class="stat-value text-primary">{{ overview.total_messages|default:0 }}</div>
+                    <div class="text-muted">Total Messages</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100 border-success">
+                <div class="card-body text-center">
+                    <i class="bi bi-people text-success" style="font-size: 2rem;"></i>
+                    <div class="stat-value text-success">{{ overview.total_chats|default:0 }}</div>
+                    <div class="text-muted">Total Chats</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100 border-danger">
+                <div class="card-body text-center">
+                    <i class="bi bi-trash text-danger" style="font-size: 2rem;"></i>
+                    <div class="stat-value text-danger">{{ overview.deleted_messages|default:0 }}</div>
+                    <div class="text-muted">Deleted Messages</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card h-100 border-info">
+                <div class="card-body text-center">
+                    <i class="bi bi-image text-info" style="font-size: 2rem;"></i>
+                    <div class="stat-value text-info">{{ overview.media_messages|default:0 }}</div>
+                    <div class="text-muted">Media Files</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- Messages Over Time -->
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> Messages Over Time (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="dailyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Type Distribution -->
+        <div class="col-lg-4">
+            <div class="card shadow h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart"></i> Chat Types</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="chatTypeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- Hourly Activity -->
+        <div class="col-lg-6">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-clock"></i> Activity by Hour</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="hourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weekly Activity -->
+        <div class="col-lg-6">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-calendar-week"></i> Activity by Day of Week</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="weeklyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Top Chats -->
+        <div class="col-lg-6">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Top Chats by Messages</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for chat in top_chats %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                {% if chat.chat_type == 'channel' %}
+                                <i class="bi bi-megaphone text-primary me-2"></i>
+                                {% elif chat.chat_type == 'supergroup' or chat.chat_type == 'group' %}
+                                <i class="bi bi-people text-success me-2"></i>
+                                {% else %}
+                                <i class="bi bi-person text-secondary me-2"></i>
+                                {% endif %}
+                                {{ chat.title|truncatechars:30 }}
+                            </div>
+                            <div>
+                                <span class="badge bg-primary">{{ chat.message_count }}</span>
+                                {% if chat.deleted_count > 0 %}
+                                <span class="badge bg-danger">{{ chat.deleted_count }} deleted</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-muted text-center">No data available</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Media Stats -->
+        <div class="col-lg-6">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark"></i> Media Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-4">
+                        <div class="col-4">
+                            <div class="h4 text-primary">{{ media_stats.total_count|default:0 }}</div>
+                            <small class="text-muted">Total Files</small>
+                        </div>
+                        <div class="col-4">
+                            <div class="h4 text-success">{{ media_stats.downloaded|default:0 }}</div>
+                            <small class="text-muted">Downloaded</small>
+                        </div>
+                        <div class="col-4">
+                            <div class="h4 text-warning">{{ media_stats.not_downloaded|default:0 }}</div>
+                            <small class="text-muted">Pending</small>
+                        </div>
+                    </div>
+                    {% if media_stats.total_size %}
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-hdd"></i> Total Size: <strong>{{ media_stats.total_size|filesizeformat }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Daily Messages Chart
+const dailyData = {{ daily_counts|safe }};
+const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+new Chart(dailyCtx, {
+    type: 'line',
+    data: {
+        labels: dailyData.map(d => d.day),
+        datasets: [{
+            label: 'Total Messages',
+            data: dailyData.map(d => d.count),
+            borderColor: '#0088cc',
+            backgroundColor: 'rgba(0, 136, 204, 0.1)',
+            fill: true,
+            tension: 0.4
+        }, {
+            label: 'Outgoing',
+            data: dailyData.map(d => d.outgoing),
+            borderColor: '#28a745',
+            backgroundColor: 'transparent',
+            borderDash: [5, 5],
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom' }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// Hourly Activity Chart
+const hourlyData = {{ hourly_activity|safe }};
+const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+new Chart(hourlyCtx, {
+    type: 'bar',
+    data: {
+        labels: hourlyData.map(d => d.hour + ':00'),
+        datasets: [{
+            label: 'Messages',
+            data: hourlyData.map(d => d.count),
+            backgroundColor: 'rgba(0, 136, 204, 0.7)',
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+    }
+});
+
+// Weekly Activity Chart
+const weeklyData = {{ weekly_activity|safe }};
+const weeklyCtx = document.getElementById('weeklyChart').getContext('2d');
+new Chart(weeklyCtx, {
+    type: 'bar',
+    data: {
+        labels: weeklyData.map(d => d.day),
+        datasets: [{
+            label: 'Messages',
+            data: weeklyData.map(d => d.count),
+            backgroundColor: [
+                '#ff6384', '#36a2eb', '#ffce56', '#4bc0c0',
+                '#9966ff', '#ff9f40', '#ff6384'
+            ],
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+    }
+});
+
+// Chat Type Distribution Chart
+const chatTypeData = {{ chat_type_dist|safe }};
+const chatTypeCtx = document.getElementById('chatTypeChart').getContext('2d');
+new Chart(chatTypeCtx, {
+    type: 'doughnut',
+    data: {
+        labels: chatTypeData.map(d => d.chat_type),
+        datasets: [{
+            data: chatTypeData.map(d => d.messages),
+            backgroundColor: ['#0088cc', '#28a745', '#ffc107', '#dc3545'],
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom' }
+        }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+
+{% block title %}Deletion Alerts - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-trash3"></i> Deletion Alert Configuration</h2>
+            <p class="text-muted mb-0">Get notified when messages are deleted</p>
+        </div>
+        <a href="{% url 'telegram:keyword_alerts' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Alerts
+        </a>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-gear"></i> Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form id="configForm">
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enableAlerts" {% if config.enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="enableAlerts">Enable Deletion Alerts</label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Minimum Message Age (hours)</label>
+                            <input type="number" class="form-control" id="minAge" value="{{ config.min_message_age_hours|default:1 }}" min="0">
+                            <small class="text-muted">Only alert for messages older than this</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="notifyWebhook" {% if config.notify_webhook %}checked{% endif %}>
+                                <label class="form-check-label" for="notifyWebhook">Send Webhook Notifications</label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="webhookUrlGroup" style="{% if not config.notify_webhook %}display:none{% endif %}">
+                            <label class="form-label">Webhook URL</label>
+                            <input type="url" class="form-control" id="webhookUrl" value="{{ config.webhook_url|default:'' }}" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Monitored Chats</label>
+                            <select class="form-select" id="monitoredChats" multiple size="6">
+                                {% for chat in chats %}
+                                <option value="{{ chat.id }}" {% if chat.id in monitored_chat_ids %}selected{% endif %}>
+                                    {{ chat.title }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Hold Ctrl/Cmd to select multiple. Leave empty to monitor all.</small>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Save Configuration
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Deletions</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush" style="max-height: 400px; overflow-y: auto;">
+                        {% for msg in recent_deletions %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between">
+                                <strong>{{ msg.chat.title|truncatechars:30 }}</strong>
+                                <small class="text-danger">{{ msg.deleted_at|timesince }} ago</small>
+                            </div>
+                            <p class="mb-1 text-muted">{{ msg.text|truncatechars:100|default:"[Media message]" }}</p>
+                            <small class="text-muted">
+                                From: {{ msg.sender_name|default:"Unknown" }} &bull;
+                                Original: {{ msg.date|date:"M d, H:i" }}
+                            </small>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-center text-muted py-4">
+                            No recent deletions detected
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Deletion Stats</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <h3 class="text-danger">{{ stats.today|default:0 }}</h3>
+                            <small class="text-muted">Today</small>
+                        </div>
+                        <div class="col-4">
+                            <h3 class="text-warning">{{ stats.week|default:0 }}</h3>
+                            <small class="text-muted">This Week</small>
+                        </div>
+                        <div class="col-4">
+                            <h3 class="text-info">{{ stats.total|default:0 }}</h3>
+                            <small class="text-muted">Total</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('notifyWebhook').addEventListener('change', function() {
+    document.getElementById('webhookUrlGroup').style.display = this.checked ? 'block' : 'none';
+});
+
+document.getElementById('configForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const chatsSelect = document.getElementById('monitoredChats');
+    const selectedChats = Array.from(chatsSelect.selectedOptions).map(o => parseInt(o.value));
+
+    const response = await fetch('{% url "telegram:deletion_alert_config" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({
+            enabled: document.getElementById('enableAlerts').checked,
+            min_message_age_hours: parseInt(document.getElementById('minAge').value) || 1,
+            notify_webhook: document.getElementById('notifyWebhook').checked,
+            webhook_url: document.getElementById('webhookUrl').value,
+            monitored_chats: selectedChats
+        })
+    });
+
+    if (response.ok) {
+        alert('Configuration saved successfully!');
+    } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to save configuration');
+    }
+});
+</script>
+{% endblock %}

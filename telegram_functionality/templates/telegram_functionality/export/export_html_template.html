@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Export - {{ export_date }}</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --border-color: #e0e0e0;
+            --msg-bg: #f5f5f5;
+            --msg-own-bg: #dcf8c6;
+            --header-bg: #0088cc;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #1a1a1a;
+                --text-color: #e0e0e0;
+                --border-color: #404040;
+                --msg-bg: #2d2d2d;
+                --msg-own-bg: #1e5631;
+                --header-bg: #005580;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+        }
+
+        .header {
+            background: var(--header-bg);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin-bottom: 0.5rem;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .chat-section {
+            margin-bottom: 3rem;
+        }
+
+        .chat-header {
+            background: var(--msg-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border-left: 4px solid var(--header-bg);
+        }
+
+        .chat-title {
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+
+        .chat-meta {
+            color: #888;
+            font-size: 0.875rem;
+        }
+
+        .messages {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .message {
+            background: var(--msg-bg);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .message.deleted {
+            opacity: 0.6;
+            border-left: 3px solid #dc3545;
+        }
+
+        .message-sender {
+            font-weight: bold;
+            color: var(--header-bg);
+            font-size: 0.875rem;
+        }
+
+        .message-text {
+            margin: 0.25rem 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message-meta {
+            font-size: 0.75rem;
+            color: #888;
+            text-align: right;
+        }
+
+        .message-media {
+            background: var(--border-color);
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+            font-style: italic;
+            font-size: 0.875rem;
+        }
+
+        .deleted-badge {
+            background: #dc3545;
+            color: white;
+            padding: 0.125rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+
+        .toc {
+            background: var(--msg-bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+
+        .toc h2 {
+            margin-bottom: 1rem;
+        }
+
+        .toc-list {
+            list-style: none;
+        }
+
+        .toc-list li {
+            padding: 0.25rem 0;
+        }
+
+        .toc-list a {
+            color: var(--header-bg);
+            text-decoration: none;
+        }
+
+        .toc-list a:hover {
+            text-decoration: underline;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #888;
+            border-top: 1px solid var(--border-color);
+            margin-top: 2rem;
+        }
+
+        @media print {
+            .header { background: #333; }
+            .message { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Telegram Export</h1>
+        <p>Generated on {{ export_date }}</p>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{{ total_chats }}</div>
+                <div>Chats</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ total_messages }}</div>
+                <div>Messages</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ deleted_count }}</div>
+                <div>Deleted</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="toc">
+            <h2>Table of Contents</h2>
+            <ul class="toc-list">
+                {% for chat in chats %}
+                <li>
+                    <a href="#chat-{{ chat.id }}">{{ chat.title }}</a>
+                    <span class="text-muted">({{ chat.message_count }} messages)</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        {% for chat in chats %}
+        <div class="chat-section" id="chat-{{ chat.id }}">
+            <div class="chat-header">
+                <div class="chat-title">{{ chat.title }}</div>
+                <div class="chat-meta">
+                    {{ chat.chat_type }} &bull; {{ chat.message_count }} messages
+                    {% if chat.deleted_count %} &bull; {{ chat.deleted_count }} deleted{% endif %}
+                </div>
+            </div>
+
+            <div class="messages">
+                {% for msg in chat.messages %}
+                <div class="message {% if msg.is_deleted %}deleted{% endif %}">
+                    <div class="message-sender">
+                        {{ msg.sender_name|default:"Unknown" }}
+                        {% if msg.is_deleted %}<span class="deleted-badge">Deleted</span>{% endif %}
+                    </div>
+                    {% if msg.text %}
+                    <div class="message-text">{{ msg.text }}</div>
+                    {% endif %}
+                    {% if msg.has_media %}
+                    <div class="message-media">
+                        [{{ msg.media_type|default:"Media" }}]
+                        {% if msg.media_path %} - {{ msg.media_path }}{% endif %}
+                    </div>
+                    {% endif %}
+                    <div class="message-meta">
+                        {{ msg.date|date:"M d, Y H:i" }}
+                        {% if msg.is_deleted and msg.deleted_at %}
+                        &bull; Deleted: {{ msg.deleted_at|date:"M d, Y H:i" }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="footer">
+        <p>Exported from Telegram Analyzer</p>
+        <p>{{ export_date }}</p>
+    </div>
+</body>
+</html>

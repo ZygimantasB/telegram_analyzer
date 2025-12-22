@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}Notes - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-sticky"></i> Message Notes</h2>
+            <p class="text-muted mb-0">{{ notes.count }} notes</p>
+        </div>
+        <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Dashboard
+        </a>
+    </div>
+
+    {% if notes %}
+    <div class="row g-4">
+        {% for note in notes %}
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between">
+                    <a href="{% url 'telegram:chat_messages' note.message.chat.chat_id %}" class="text-decoration-none">
+                        <i class="bi bi-chat-dots"></i> {{ note.message.chat.title|truncatechars:25 }}
+                    </a>
+                    <small class="text-muted">{{ note.created_at|date:"M d, Y" }}</small>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-secondary mb-2 py-2">
+                        <small>{{ note.message.text|truncatechars:150|default:"[Media message]" }}</small>
+                    </div>
+                    <p class="mb-0"><strong>Your note:</strong></p>
+                    <p>{{ note.content }}</p>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteNote({{ note.id }}, this)">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-sticky text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">No Notes Yet</h4>
+            <p class="text-muted">Add notes to messages to remember important details</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function deleteNote(id, btn) {
+    if (!confirm('Delete this note?')) return;
+
+    const response = await fetch(`/telegram/notes/${id}/delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+
+    if (response.ok) {
+        btn.closest('.col-md-6').remove();
+    }
+}
+</script>
+{% endblock %}

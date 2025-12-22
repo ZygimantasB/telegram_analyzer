@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+
+{% block title %}Activity Heatmap - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.4/dist/cal-heatmap.css">
+<style>
+    #cal-heatmap { overflow-x: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-calendar3"></i> Activity Heatmap</h2>
+        <div class="d-flex gap-2">
+            <select id="daysSelect" class="form-select" style="width: auto;" onchange="location.href='?days='+this.value">
+                <option value="90" {% if days == 90 %}selected{% endif %}>Last 90 days</option>
+                <option value="180" {% if days == 180 %}selected{% endif %}>Last 6 months</option>
+                <option value="365" {% if days == 365 %}selected{% endif %}>Last year</option>
+            </select>
+            <a href="{% url 'telegram:analytics' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow">
+        <div class="card-body">
+            <div id="cal-heatmap"></div>
+            <div class="d-flex justify-content-between mt-3">
+                <button class="btn btn-sm btn-outline-secondary" id="prevBtn">
+                    <i class="bi bi-chevron-left"></i> Previous
+                </button>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted">Less</span>
+                    <div style="display: flex; gap: 2px;">
+                        <div style="width: 12px; height: 12px; background: #ebedf0; border-radius: 2px;"></div>
+                        <div style="width: 12px; height: 12px; background: #9be9a8; border-radius: 2px;"></div>
+                        <div style="width: 12px; height: 12px; background: #40c463; border-radius: 2px;"></div>
+                        <div style="width: 12px; height: 12px; background: #30a14e; border-radius: 2px;"></div>
+                        <div style="width: 12px; height: 12px; background: #216e39; border-radius: 2px;"></div>
+                    </div>
+                    <span class="text-muted">More</span>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" id="nextBtn">
+                    Next <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">Activity Summary</h5>
+        </div>
+        <div class="card-body">
+            <div class="row text-center" id="summary">
+                <div class="col-md-3">
+                    <h4 class="text-primary" id="totalDays">-</h4>
+                    <p class="text-muted mb-0">Active Days</p>
+                </div>
+                <div class="col-md-3">
+                    <h4 class="text-success" id="totalMessages">-</h4>
+                    <p class="text-muted mb-0">Total Messages</p>
+                </div>
+                <div class="col-md-3">
+                    <h4 class="text-warning" id="maxDay">-</h4>
+                    <p class="text-muted mb-0">Most Active Day</p>
+                </div>
+                <div class="col-md-3">
+                    <h4 class="text-info" id="avgPerDay">-</h4>
+                    <p class="text-muted mb-0">Avg Messages/Day</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.4/dist/cal-heatmap.min.js"></script>
+<script>
+const heatmapData = {{ heatmap_data|safe }};
+
+// Convert to cal-heatmap format
+const data = Object.entries(heatmapData).map(([date, count]) => ({
+    date: date,
+    value: count
+}));
+
+// Calculate summary
+const values = Object.values(heatmapData);
+document.getElementById('totalDays').textContent = values.filter(v => v > 0).length;
+document.getElementById('totalMessages').textContent = values.reduce((a, b) => a + b, 0);
+document.getElementById('maxDay').textContent = Math.max(...values, 0);
+document.getElementById('avgPerDay').textContent = values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+
+const cal = new CalHeatmap();
+cal.paint({
+    itemSelector: '#cal-heatmap',
+    data: {
+        source: data,
+        x: 'date',
+        y: 'value',
+    },
+    date: { start: new Date(Date.now() - {{ days }} * 24 * 60 * 60 * 1000) },
+    range: Math.ceil({{ days }} / 30),
+    scale: {
+        color: {
+            type: 'threshold',
+            range: ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'],
+            domain: [1, 5, 15, 30],
+        },
+    },
+    domain: {
+        type: 'month',
+        gutter: 4,
+        label: { text: 'MMM', textAlign: 'start', position: 'top' },
+    },
+    subDomain: { type: 'day', radius: 2, width: 12, height: 12, gutter: 2 },
+});
+
+document.getElementById('prevBtn').onclick = () => cal.previous();
+document.getElementById('nextBtn').onclick = () => cal.next();
+</script>
+{% endblock %}

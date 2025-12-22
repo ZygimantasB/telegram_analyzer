@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+
+{% block title %}Image Slideshow - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<style>
+    .slideshow-container {
+        position: relative;
+        background: #000;
+        height: calc(100vh - 100px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .slideshow-image {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+    .slide-controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 1rem;
+        background: rgba(0,0,0,0.7);
+        padding: 1rem;
+        border-radius: 1rem;
+    }
+    .slide-controls button {
+        color: white;
+        background: transparent;
+        border: 1px solid rgba(255,255,255,0.3);
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        cursor: pointer;
+    }
+    .slide-controls button:hover {
+        background: rgba(255,255,255,0.1);
+    }
+    .slide-info {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: white;
+        background: rgba(0,0,0,0.7);
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+    }
+    .slide-counter {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        color: white;
+        background: rgba(0,0,0,0.7);
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+    }
+    .nav-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        color: white;
+        font-size: 3rem;
+        cursor: pointer;
+        padding: 1rem;
+        background: rgba(0,0,0,0.5);
+        border-radius: 50%;
+    }
+    .nav-arrow:hover { background: rgba(0,0,0,0.8); }
+    .nav-prev { left: 20px; }
+    .nav-next { right: 20px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="slideshow-container" id="slideshow">
+    <img src="" class="slideshow-image" id="currentImage">
+
+    <div class="slide-info" id="slideInfo"></div>
+    <div class="slide-counter" id="slideCounter"></div>
+
+    <div class="nav-arrow nav-prev" onclick="prevSlide()">
+        <i class="bi bi-chevron-left"></i>
+    </div>
+    <div class="nav-arrow nav-next" onclick="nextSlide()">
+        <i class="bi bi-chevron-right"></i>
+    </div>
+
+    <div class="slide-controls">
+        <button onclick="prevSlide()"><i class="bi bi-skip-backward"></i> Previous</button>
+        <button id="playBtn" onclick="togglePlay()"><i class="bi bi-play"></i> Play</button>
+        <button onclick="nextSlide()">Next <i class="bi bi-skip-forward"></i></button>
+        <button onclick="downloadCurrent()"><i class="bi bi-download"></i></button>
+        <a href="{% url 'telegram:media_gallery' %}" class="btn btn-outline-light">
+            <i class="bi bi-grid"></i> Gallery
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const images = [
+    {% for img in images %}
+    {
+        id: {{ img.id }},
+        url: '{% url "telegram:download_media" img.id %}',
+        chat: '{{ img.chat.title|escapejs }}',
+        date: '{{ img.date|date:"M d, Y H:i" }}'
+    },
+    {% endfor %}
+];
+
+let currentIndex = 0;
+let isPlaying = false;
+let playInterval = null;
+
+{% if start_id %}
+const startIdx = images.findIndex(i => i.id == {{ start_id }});
+if (startIdx >= 0) currentIndex = startIdx;
+{% endif %}
+
+function showSlide(index) {
+    if (index < 0) index = images.length - 1;
+    if (index >= images.length) index = 0;
+    currentIndex = index;
+
+    const img = images[currentIndex];
+    document.getElementById('currentImage').src = img.url;
+    document.getElementById('slideInfo').innerHTML = `<strong>${img.chat}</strong><br><small>${img.date}</small>`;
+    document.getElementById('slideCounter').textContent = `${currentIndex + 1} / ${images.length}`;
+}
+
+function nextSlide() { showSlide(currentIndex + 1); }
+function prevSlide() { showSlide(currentIndex - 1); }
+
+function togglePlay() {
+    isPlaying = !isPlaying;
+    const btn = document.getElementById('playBtn');
+
+    if (isPlaying) {
+        btn.innerHTML = '<i class="bi bi-pause"></i> Pause';
+        playInterval = setInterval(nextSlide, 3000);
+    } else {
+        btn.innerHTML = '<i class="bi bi-play"></i> Play';
+        clearInterval(playInterval);
+    }
+}
+
+function downloadCurrent() {
+    const a = document.createElement('a');
+    a.href = images[currentIndex].url;
+    a.download = '';
+    a.click();
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') prevSlide();
+    if (e.key === 'ArrowRight') nextSlide();
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+    if (e.key === 'Escape') window.location.href = '{% url "telegram:media_gallery" %}';
+});
+
+// Initialize
+if (images.length > 0) {
+    showSlide(currentIndex);
+} else {
+    document.getElementById('slideshow').innerHTML = '<div class="text-white text-center"><h4>No images to display</h4></div>';
+}
+</script>
+{% endblock %}

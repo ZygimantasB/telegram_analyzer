@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+
+{% block title %}Scheduled Backups - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-cloud-upload"></i> Scheduled Backups</h2>
+            <p class="text-muted mb-0">Automate your data exports</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBackupModal">
+                <i class="bi bi-plus-lg"></i> Create Schedule
+            </button>
+            <a href="{% url 'telegram:export' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-download"></i> Manual Export
+            </a>
+        </div>
+    </div>
+
+    <!-- Scheduled Backups -->
+    <div class="row g-4 mb-4">
+        {% for backup in backups %}
+        <div class="col-md-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge {% if backup.enabled %}bg-success{% else %}bg-secondary{% endif %}">
+                            {% if backup.enabled %}Active{% else %}Paused{% endif %}
+                        </span>
+                        <span class="badge bg-primary ms-1">{{ backup.get_format_display }}</span>
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <button class="dropdown-item" onclick="toggleBackup({{ backup.id }})">
+                                    <i class="bi bi-{% if backup.enabled %}pause{% else %}play{% endif %}"></i>
+                                    {% if backup.enabled %}Pause{% else %}Resume{% endif %}
+                                </button>
+                            </li>
+                            <li>
+                                <button class="dropdown-item" onclick="runNow({{ backup.id }})">
+                                    <i class="bi bi-play-circle"></i> Run Now
+                                </button>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <button class="dropdown-item text-danger" onclick="deleteBackup({{ backup.id }})">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ backup.name }}</h5>
+                    <p class="text-muted mb-2">
+                        <i class="bi bi-clock"></i>
+                        {{ backup.get_frequency_display }}
+                        {% if backup.time_of_day %}at {{ backup.time_of_day|time:"H:i" }}{% endif %}
+                    </p>
+                    {% if backup.last_run %}
+                    <p class="text-muted mb-2">
+                        <i class="bi bi-check-circle text-success"></i>
+                        Last run: {{ backup.last_run|timesince }} ago
+                    </p>
+                    {% endif %}
+                    {% if backup.next_run %}
+                    <p class="text-muted mb-0">
+                        <i class="bi bi-calendar-event"></i>
+                        Next run: {{ backup.next_run|date:"M d, Y H:i" }}
+                    </p>
+                    {% endif %}
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">
+                        {% if backup.include_media %}
+                        <i class="bi bi-images"></i> Includes media
+                        {% else %}
+                        <i class="bi bi-chat-text"></i> Messages only
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-cloud-upload text-muted" style="font-size: 4rem;"></i>
+                    <h4 class="mt-3">No Scheduled Backups</h4>
+                    <p class="text-muted">Set up automatic backups to keep your data safe</p>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBackupModal">
+                        <i class="bi bi-plus-lg"></i> Create Your First Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Backup History -->
+    {% if history %}
+    <h4 class="mb-3"><i class="bi bi-clock-history"></i> Backup History</h4>
+    <div class="card shadow">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Schedule</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Size</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in history %}
+                        <tr>
+                            <td>{{ item.schedule.name }}</td>
+                            <td>{{ item.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if item.status == 'completed' %}
+                                <span class="badge bg-success">Completed</span>
+                                {% elif item.status == 'failed' %}
+                                <span class="badge bg-danger">Failed</span>
+                                {% else %}
+                                <span class="badge bg-warning">{{ item.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.file_size|filesizeformat }}</td>
+                            <td>
+                                {% if item.file_path %}
+                                <a href="{% url 'telegram:download_backup' item.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Create Backup Modal -->
+<div class="modal fade" id="createBackupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Backup Schedule</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Schedule Name</label>
+                    <input type="text" class="form-control" id="backupName" placeholder="e.g., Weekly Full Backup">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Frequency</label>
+                    <select class="form-select" id="backupFrequency">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Time of Day</label>
+                    <input type="time" class="form-control" id="backupTime" value="03:00">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Export Format</label>
+                    <select class="form-select" id="backupFormat">
+                        <option value="json">JSON</option>
+                        <option value="csv">CSV</option>
+                        <option value="html">HTML</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="includeMedia">
+                        <label class="form-check-label" for="includeMedia">
+                            Include media files (larger backup size)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createBackup()">Create Schedule</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function createBackup() {
+    const name = document.getElementById('backupName').value.trim();
+    if (!name) {
+        alert('Please enter a schedule name');
+        return;
+    }
+
+    const response = await fetch('{% url "telegram:create_backup_schedule" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({
+            name: name,
+            frequency: document.getElementById('backupFrequency').value,
+            time_of_day: document.getElementById('backupTime').value,
+            format: document.getElementById('backupFormat').value,
+            include_media: document.getElementById('includeMedia').checked
+        })
+    });
+
+    if (response.ok) {
+        location.reload();
+    } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create schedule');
+    }
+}
+
+async function toggleBackup(id) {
+    const response = await fetch(`/telegram/backups/${id}/toggle/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+
+    if (response.ok) {
+        location.reload();
+    }
+}
+
+async function deleteBackup(id) {
+    if (!confirm('Delete this backup schedule?')) return;
+
+    const response = await fetch(`/telegram/backups/${id}/delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+
+    if (response.ok) {
+        location.reload();
+    }
+}
+
+async function runNow(id) {
+    const response = await fetch(`/telegram/backups/${id}/run/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    });
+
+    if (response.ok) {
+        alert('Backup started. Check history for results.');
+        location.reload();
+    } else {
+        alert('Failed to start backup');
+    }
+}
+</script>
+{% endblock %}

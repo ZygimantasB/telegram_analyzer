@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+
+{% block title %}Export Data - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-download"></i> Export Data</h2>
+            <p class="text-muted mb-0">Export your Telegram messages in various formats</p>
+        </div>
+        <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Dashboard
+        </a>
+    </div>
+
+    <div class="row g-4">
+        <!-- Export Options -->
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-sliders"></i> Export Options</h5>
+                </div>
+                <div class="card-body">
+                    <form id="exportForm">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Chat</label>
+                                <select name="chat_id" class="form-select" id="chatSelect">
+                                    <option value="">All Chats</option>
+                                    {% for chat in chats %}
+                                    <option value="{{ chat.chat_id }}">{{ chat.title }} ({{ chat.message_count }} msgs)</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">From Date</label>
+                                <input type="date" name="date_from" class="form-control" id="dateFrom">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">To Date</label>
+                                <input type="date" name="date_to" class="form-control" id="dateTo">
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input type="checkbox" name="include_deleted" value="1" class="form-check-input" id="includeDeleted" checked>
+                                    <label class="form-check-label" for="includeDeleted">Include deleted messages</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h6>Export Format</h6>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="card border-primary h-100" style="cursor: pointer;" onclick="exportData('json')">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-filetype-json text-primary" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-2">JSON</h5>
+                                        <p class="text-muted small mb-0">Machine-readable format, includes all data</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-success h-100" style="cursor: pointer;" onclick="exportData('csv')">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-filetype-csv text-success" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-2">CSV</h5>
+                                        <p class="text-muted small mb-0">Spreadsheet format, open in Excel</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-warning h-100" style="cursor: pointer;" onclick="exportData('html')">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-filetype-html text-warning" style="font-size: 3rem;"></i>
+                                        <h5 class="mt-2">HTML</h5>
+                                        <p class="text-muted small mb-0">Readable format, view in browser</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Exports -->
+        <div class="col-lg-4">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Exports</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for export in recent_exports %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <i class="bi bi-file-earmark"></i>
+                                    {{ export.messages_count }} messages
+                                </div>
+                                <small class="text-muted">{{ export.created_at|date:"M d, H:i" }}</small>
+                            </div>
+                            <small class="text-muted">{{ export.file_size|filesizeformat }}</small>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-muted text-center">No exports yet</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-calendar-check"></i> Scheduled Backups</h5>
+                </div>
+                <div class="card-body text-center">
+                    <p class="text-muted">Set up automatic backups</p>
+                    <a href="{% url 'telegram:scheduled_backups' %}" class="btn btn-primary">
+                        <i class="bi bi-gear"></i> Configure
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function exportData(format) {
+    const params = new URLSearchParams();
+
+    const chatId = document.getElementById('chatSelect').value;
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    const includeDeleted = document.getElementById('includeDeleted').checked;
+
+    if (chatId) params.append('chat_id', chatId);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    params.append('include_deleted', includeDeleted ? '1' : '0');
+
+    window.location.href = `/telegram/export/${format}/?${params.toString()}`;
+}
+</script>
+{% endblock %}

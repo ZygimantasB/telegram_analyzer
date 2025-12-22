@@ -185,5 +185,121 @@
             </div>
         </div>
     </div>
+
+    <!-- Advanced Features -->
+    <h4 class="mb-3"><i class="bi bi-grid-3x3-gap"></i> Features</h4>
+    <div class="row">
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:analytics' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-bar-chart-line text-primary" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Analytics</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:media_gallery' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-images text-success" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Gallery</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:bookmarks' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-bookmark text-warning" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Bookmarks</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:tags' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-tags text-info" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Tags</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:folders_list' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-folder text-secondary" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Folders</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:notes' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-sticky text-danger" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Notes</h6>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:export' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-download text-primary" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Export</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:keyword_alerts' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-bell text-warning" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Alerts</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:deleted_messages' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-trash text-danger" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Deleted</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:find_duplicates' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-copy text-info" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Duplicates</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:scheduled_backups' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-cloud-upload text-success" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Backups</h6>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-2 col-sm-4 mb-3">
+            <a href="{% url 'telegram:audit_log' %}" class="card text-decoration-none h-100 feature-card">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-journal-text text-secondary" style="font-size: 2rem;"></i>
+                    <h6 class="mt-2 mb-0">Audit Log</h6>
+                </div>
+            </a>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.feature-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+</style>
 {% endblock %}

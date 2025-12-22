@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}Word Cloud - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<style>
+    #wordCloud { width: 100%; height: 500px; }
+    .word-list { max-height: 400px; overflow-y: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-cloud"></i> Word Frequency Analysis</h2>
+        <a href="{% url 'telegram:analytics' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Analytics
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Time Period</label>
+                    <select name="days" class="form-select">
+                        <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 days</option>
+                        <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 days</option>
+                        <option value="90" {% if days == 90 %}selected{% endif %}>Last 90 days</option>
+                        <option value="365" {% if days == 365 %}selected{% endif %}>Last year</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Chat</label>
+                    <select name="chat_id" class="form-select">
+                        <option value="">All Chats</option>
+                        {% for chat in chats %}
+                        <option value="{{ chat.chat_id }}" {% if chat_id == chat.chat_id|stringformat:"s" %}selected{% endif %}>{{ chat.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Min Word Length</label>
+                    <select name="min_length" class="form-select">
+                        <option value="2" {% if min_length == 2 %}selected{% endif %}>2+ chars</option>
+                        <option value="3" {% if min_length == 3 %}selected{% endif %}>3+ chars</option>
+                        <option value="4" {% if min_length == 4 %}selected{% endif %}>4+ chars</option>
+                        <option value="5" {% if min_length == 5 %}selected{% endif %}>5+ chars</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel"></i> Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0">Word Cloud</h5>
+                </div>
+                <div class="card-body">
+                    <div id="wordCloud"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow">
+                <div class="card-header">
+                    <h5 class="mb-0">Top Words</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="word-list list-group list-group-flush">
+                        {% for word, count in word_frequency %}
+                        <div class="list-group-item d-flex justify-content-between">
+                            <span>{{ word }}</span>
+                            <span class="badge bg-primary">{{ count }}</span>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-muted text-center">No words found</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.min.js"></script>
+<script>
+const wordData = {{ word_frequency_json|safe }};
+if (wordData.length > 0) {
+    const maxCount = Math.max(...wordData.map(w => w[1]));
+    const wordList = wordData.map(w => [w[0], (w[1] / maxCount) * 100]);
+
+    WordCloud(document.getElementById('wordCloud'), {
+        list: wordList,
+        gridSize: 8,
+        weightFactor: 3,
+        fontFamily: 'Arial, sans-serif',
+        color: function() {
+            return ['#0088cc', '#28a745', '#dc3545', '#ffc107', '#17a2b8'][Math.floor(Math.random() * 5)];
+        },
+        rotateRatio: 0.3,
+        backgroundColor: 'transparent'
+    });
+}
+</script>
+{% endblock %}

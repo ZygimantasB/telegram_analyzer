@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ folder.name }} - Folder{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center gap-3">
+            <i class="{{ folder.icon }}" style="color: {{ folder.color }}; font-size: 2.5rem;"></i>
+            <div>
+                <h2 class="mb-0">{{ folder.name }}</h2>
+                <p class="text-muted mb-0">{{ chats|length }} chats in this folder</p>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChatsModal">
+                <i class="bi bi-plus-lg"></i> Add Chats
+            </button>
+            <a href="{% url 'telegram:folders_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> All Folders
+            </a>
+        </div>
+    </div>
+
+    {% if chats %}
+    <div class="row g-4">
+        {% for chat in chats %}
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                {% if chat.chat_type == 'channel' %}
+                                <i class="bi bi-megaphone text-primary"></i>
+                                {% elif chat.chat_type == 'group' or chat.chat_type == 'supergroup' %}
+                                <i class="bi bi-people text-success"></i>
+                                {% else %}
+                                <i class="bi bi-person text-secondary"></i>
+                                {% endif %}
+                                <h6 class="mb-0">{{ chat.title|truncatechars:25 }}</h6>
+                            </div>
+                            <p class="text-muted small mb-2">
+                                {{ chat.message_count }} messages
+                            </p>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeFromFolder({{ chat.id }}, this)" title="Remove from folder">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <a href="{% url 'telegram:chat_messages' chat.chat_id %}" class="btn btn-sm btn-outline-primary w-100">
+                        <i class="bi bi-chat-dots"></i> View Messages
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="{{ folder.icon }} text-muted" style="font-size: 4rem; color: {{ folder.color }} !important;"></i>
+            <h4 class="mt-3">Empty Folder</h4>
+            <p class="text-muted">Add chats to this folder to organize your conversations</p>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChatsModal">
+                <i class="bi bi-plus-lg"></i> Add Chats
+            </button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Chats Modal -->
+<div class="modal fade" id="addChatsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Chats to {{ folder.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="chatSearch" placeholder="Search chats...">
+                </div>
+                <div class="list-group" id="availableChats" style="max-height: 400px; overflow-y: auto;">
+                    {% for chat in available_chats %}
+                    <label class="list-group-item list-group-item-action">
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="checkbox" class="form-check-input chat-checkbox" value="{{ chat.id }}">
+                            {% if chat.chat_type == 'channel' %}
+                            <i class="bi bi-megaphone text-primary"></i>
+                            {% elif chat.chat_type == 'group' or chat.chat_type == 'supergroup' %}
+                            <i class="bi bi-people text-success"></i>
+                            {% else %}
+                            <i class="bi bi-person text-secondary"></i>
+                            {% endif %}
+                            <span class="chat-title">{{ chat.title }}</span>
+                            <small class="text-muted ms-auto">{{ chat.message_count }} msgs</small>
+                        </div>
+                    </label>
+                    {% empty %}
+                    <div class="list-group-item text-center text-muted">
+                        All chats are already in this folder
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addSelectedChats()">
+                    <i class="bi bi-plus-lg"></i> Add Selected
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Chat search filter
+document.getElementById('chatSearch').addEventListener('input', function() {
+    const query = this.value.toLowerCase();
+    document.querySelectorAll('#availableChats .list-group-item').forEach(item => {
+        const title = item.querySelector('.chat-title').textContent.toLowerCase();
+        item.style.display = title.includes(query) ? '' : 'none';
+    });
+});
+
+async function addSelectedChats() {
+    const selected = Array.from(document.querySelectorAll('.chat-checkbox:checked')).map(cb => parseInt(cb.value));
+
+    if (selected.length === 0) {
+        alert('Please select at least one chat');
+        return;
+    }
+
+    const response = await fetch('{% url "telegram:folder_add_chat" folder.id %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ chat_ids: selected })
+    });
+
+    if (response.ok) {
+        location.reload();
+    } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to add chats');
+    }
+}
+
+async function removeFromFolder(chatId, btn) {
+    if (!confirm('Remove this chat from the folder?')) return;
+
+    const response = await fetch('{% url "telegram:folder_remove_chat" folder.id %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ chat_id: chatId })
+    });
+
+    if (response.ok) {
+        btn.closest('.col-md-4').remove();
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+
+{% block title %}Media Gallery - Telegram Analyzer{% endblock %}
+
+{% block extra_css %}
+<style>
+    .media-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+    .media-item {
+        position: relative;
+        aspect-ratio: 1;
+        overflow: hidden;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+    .media-item:hover {
+        transform: scale(1.05);
+    }
+    .media-item img, .media-item video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .media-overlay {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        color: white;
+        padding: 0.5rem;
+        font-size: 0.75rem;
+    }
+    .media-type-icon {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: rgba(0,0,0,0.5);
+        color: white;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .file-item {
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-images"></i> Media Gallery</h2>
+            <p class="text-muted mb-0">{{ total }} media files</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'telegram:media_slideshow' %}" class="btn btn-outline-primary">
+                <i class="bi bi-play-circle"></i> Slideshow
+            </a>
+            <a href="{% url 'telegram:find_duplicates' %}" class="btn btn-outline-warning">
+                <i class="bi bi-copy"></i> Find Duplicates
+            </a>
+            <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Media Type</label>
+                    <select name="type" class="form-select">
+                        <option value="all" {% if media_type == 'all' %}selected{% endif %}>All Media</option>
+                        <option value="images" {% if media_type == 'images' %}selected{% endif %}>Images</option>
+                        <option value="videos" {% if media_type == 'videos' %}selected{% endif %}>Videos</option>
+                        <option value="audio" {% if media_type == 'audio' %}selected{% endif %}>Audio</option>
+                        <option value="documents" {% if media_type == 'documents' %}selected{% endif %}>Documents</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Chat</label>
+                    <select name="chat_id" class="form-select">
+                        <option value="">All Chats</option>
+                        {% for chat in chats %}
+                        <option value="{{ chat.chat_id }}" {% if chat_id == chat.chat_id|stringformat:"s" %}selected{% endif %}>{{ chat.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel"></i> Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Media Grid -->
+    {% if media_messages %}
+    <div class="media-grid mb-4">
+        {% for msg in media_messages %}
+        <div class="media-item" onclick="openMedia({{ msg.id }})">
+            {% if msg.is_image %}
+            <img src="{% url 'telegram:download_media' msg.id %}" alt="Image" loading="lazy">
+            <div class="media-type-icon"><i class="bi bi-image"></i></div>
+            {% elif msg.is_video %}
+            <video src="{% url 'telegram:download_media' msg.id %}" muted></video>
+            <div class="media-type-icon"><i class="bi bi-play-fill"></i></div>
+            {% else %}
+            <div class="file-item h-100 d-flex flex-column align-items-center justify-content-center">
+                <i class="bi bi-file-earmark fs-1 text-muted"></i>
+                <small class="text-muted text-center">{{ msg.media_file_name|truncatechars:15 }}</small>
+            </div>
+            {% endif %}
+            <div class="media-overlay">
+                <div class="text-truncate">{{ msg.chat.title }}</div>
+                <small>{{ msg.date|date:"M d" }}</small>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <nav>
+        <ul class="pagination justify-content-center">
+            {% if page > 1 %}
+            <li class="page-item">
+                <a class="page-link" href="?type={{ media_type }}&chat_id={{ chat_id }}&page={{ page|add:'-1' }}">Previous</a>
+            </li>
+            {% endif %}
+            <li class="page-item active">
+                <span class="page-link">Page {{ page }} of {{ total_pages }}</span>
+            </li>
+            {% if page < total_pages %}
+            <li class="page-item">
+                <a class="page-link" href="?type={{ media_type }}&chat_id={{ chat_id }}&page={{ page|add:'1' }}">Next</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-images text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">No Media Found</h4>
+            <p class="text-muted">No media files match your filters</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Media Modal -->
+<div class="modal fade" id="mediaModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body p-0" id="modalContent">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openMedia(id) {
+    const modal = new bootstrap.Modal(document.getElementById('mediaModal'));
+    const content = document.getElementById('modalContent');
+    content.innerHTML = `
+        <div class="text-center p-5">
+            <div class="spinner-border"></div>
+        </div>
+    `;
+    modal.show();
+
+    // Load media
+    const img = new Image();
+    img.onload = () => {
+        content.innerHTML = `<img src="/telegram/media/${id}/" class="img-fluid">`;
+    };
+    img.onerror = () => {
+        content.innerHTML = `
+            <video controls autoplay class="w-100">
+                <source src="/telegram/media/${id}/">
+            </video>
+        `;
+    };
+    img.src = `/telegram/media/${id}/`;
+}
+</script>
+{% endblock %}
