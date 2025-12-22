@@ -4,14 +4,15 @@ from .models import TelegramSession, TelegramChat, TelegramMessage, SyncTask
 
 @admin.register(TelegramSession)
 class TelegramSessionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'phone_number', 'telegram_username', 'is_active', 'created_at')
-    list_filter = ('is_active', 'created_at')
-    search_fields = ('user__email', 'phone_number', 'telegram_username')
+    list_display = ('user', 'phone_number', 'display_name', 'telegram_username', 'is_active', 'is_current', 'created_at')
+    list_filter = ('is_active', 'is_current', 'created_at')
+    search_fields = ('user__email', 'phone_number', 'telegram_username', 'display_name')
     readonly_fields = ('created_at', 'updated_at', 'telegram_user_id')
+    list_editable = ('is_current',)
 
     fieldsets = (
         (None, {
-            'fields': ('user', 'phone_number', 'is_active')
+            'fields': ('user', 'phone_number', 'display_name', 'is_active', 'is_current')
         }),
         ('Telegram Info', {
             'fields': ('telegram_user_id', 'telegram_username', 'telegram_first_name', 'telegram_last_name')

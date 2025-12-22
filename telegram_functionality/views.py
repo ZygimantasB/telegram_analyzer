@@ -24,6 +24,46 @@ from telegram_analyzer_app.logging_utils import (
 )
 
 
+def get_current_session(user):
+    """
+    Get the current active session for a user.
+    Returns the session marked as current, or the first active session,
+    or None if no sessions exist.
+    """
+    # First try to get the session marked as current
+    session = TelegramSession.objects.filter(user=user, is_current=True, is_active=True).first()
+    if session:
+        return session
+
+    # Fall back to the first active session
+    session = TelegramSession.objects.filter(user=user, is_active=True).first()
+    if session:
+        # Mark it as current
+        session.set_as_current()
+        return session
+
+    # Return any session (even inactive) for display purposes
+    return TelegramSession.objects.filter(user=user).first()
+
+
+def get_session_or_redirect(request):
+    """
+    Get current session or return redirect response.
+    Returns (session, None) if session found, or (None, redirect_response) if not.
+    """
+    session = get_current_session(request.user)
+    if not session:
+        return None, redirect('telegram:connect')
+    if not session.is_active:
+        return None, redirect('telegram:connect')
+    return session, None
+
+
+def get_all_user_sessions(user):
+    """Get all sessions for a user, ordered by current status and created date."""
+    return TelegramSession.objects.filter(user=user).order_by('-is_current', '-created_at')
+
+
 def home(request):
     """Home page view."""
     return render(request, 'telegram_functionality/home.html')
@@ -68,17 +108,19 @@ def download_media(request, message_id):
 @login_required
 @log_view()
 def telegram_connect(request):
-    """View to start Telegram connection process."""
+    """View to start Telegram connection process for a new phone number."""
     logger.debug(f"telegram_connect called by user {request.user.id}")
 
-    # Check if user already has an active session
-    try:
-        session = request.user.telegram_session
-        if session.is_active:
-            logger.info(f"User {request.user.id} already has active session, redirecting to dashboard")
-            return redirect('telegram:dashboard')
-    except TelegramSession.DoesNotExist:
-        logger.debug(f"No existing session for user {request.user.id}")
+    # Get existing sessions for display
+    existing_sessions = get_all_user_sessions(request.user)
+
+    # Check if user wants to add a new session (via query param) or has no sessions
+    adding_new = request.GET.get('new') == '1'
+
+    if existing_sessions.filter(is_active=True).exists() and not adding_new:
+        # User has active sessions and isn't explicitly adding new, redirect to sessions list
+        logger.info(f"User {request.user.id} has active sessions, showing sessions list")
+        return redirect('telegram:sessions')
 
     if request.method == 'POST':
         form = PhoneNumberForm(request.POST)
@@ -105,7 +147,11 @@ def telegram_connect(request):
     else:
         form = PhoneNumberForm()
 
-    return render(request, 'telegram_functionality/connect.html', {'form': form})
+    return render(request, 'telegram_functionality/connect.html', {
+        'form': form,
+        'existing_sessions': existing_sessions,
+        'adding_new': adding_new,
+    })
 
 
 @login_required
@@ -209,89 +255,105 @@ def verify_2fa(request):
 @login_required
 def telegram_dashboard(request):
     """Dashboard showing Telegram connection status and chats."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return redirect('telegram:connect')
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
 
-        chats = session.chats.all()[:20]
+    chats = session.chats.all()[:20]
 
-        # Calculate stats
-        stats = {
-            'users': session.chats.filter(chat_type='user').count(),
-            'groups': session.chats.filter(chat_type__in=['group', 'supergroup']).count(),
-            'channels': session.chats.filter(chat_type='channel').count(),
-        }
+    # Calculate stats
+    stats = {
+        'users': session.chats.filter(chat_type='user').count(),
+        'groups': session.chats.filter(chat_type__in=['group', 'supergroup']).count(),
+        'channels': session.chats.filter(chat_type='channel').count(),
+    }
 
-        context = {
-            'session': session,
-            'chats': chats,
-            'stats': stats,
-        }
-        return render(request, 'telegram_functionality/dashboard.html', context)
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+    # Get all sessions for session switcher
+    all_sessions = get_all_user_sessions(request.user)
+
+    context = {
+        'session': session,
+        'all_sessions': all_sessions,
+        'chats': chats,
+        'stats': stats,
+    }
+    return render(request, 'telegram_functionality/dashboard.html', context)
 
 
 @login_required
-def telegram_disconnect(request):
-    """Disconnect Telegram session."""
+def telegram_disconnect(request, session_id=None):
+    """Disconnect a specific Telegram session or the current one."""
     if request.method == 'POST':
-        try:
-            session = request.user.telegram_session
+        if session_id:
+            # Disconnect specific session
+            session = get_object_or_404(TelegramSession, id=session_id, user=request.user)
+        else:
+            # Disconnect current session
+            session = get_current_session(request.user)
+
+        if session:
             session_string = session.get_session_string()
+            was_current = session.is_current
 
             if session_string:
                 telegram_manager.disconnect_session(session_string)
 
             session.delete()
-            messages.success(request, 'Telegram disconnected successfully.')
-        except TelegramSession.DoesNotExist:
+            messages.success(request, f'Session "{session.get_display_name()}" disconnected.')
+
+            # If we deleted the current session, set another as current
+            if was_current:
+                next_session = TelegramSession.objects.filter(
+                    user=request.user, is_active=True
+                ).first()
+                if next_session:
+                    next_session.set_as_current()
+        else:
             messages.info(request, 'No Telegram session found.')
 
+    # Redirect to sessions list if we have more sessions, otherwise to connect
+    if TelegramSession.objects.filter(user=request.user).exists():
+        return redirect('telegram:sessions')
     return redirect('telegram:connect')
 
 
 @login_required
 def sync_chats(request):
     """Sync user's Telegram chats."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return JsonResponse({'success': False, 'error': 'Session not active'})
-
-        session_string = session.get_session_string()
-        result = telegram_manager.get_dialogs(session_string)
-
-        if result['success']:
-            from .models import TelegramChat
-
-            # Update or create chats
-            for dialog in result['dialogs']:
-                TelegramChat.objects.update_or_create(
-                    session=session,
-                    chat_id=dialog['id'],
-                    defaults={
-                        'chat_type': dialog['type'],
-                        'title': dialog['title'],
-                        'username': dialog.get('username'),
-                        'is_archived': dialog.get('is_archived', False),
-                    }
-                )
-
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': True, 'count': len(result['dialogs'])})
-
-            messages.success(request, f'Synced {len(result["dialogs"])} chats.')
-        else:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({'success': False, 'error': result.get('error')})
-            messages.error(request, result.get('error', 'Failed to sync chats'))
-
-    except TelegramSession.DoesNotExist:
+    session = get_current_session(request.user)
+    if not session or not session.is_active:
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': False, 'error': 'No session found'})
-        messages.error(request, 'No Telegram session found.')
+            return JsonResponse({'success': False, 'error': 'Session not active'})
+        messages.error(request, 'No active Telegram session found.')
+        return redirect('telegram:connect')
+
+    session_string = session.get_session_string()
+    result = telegram_manager.get_dialogs(session_string)
+
+    if result['success']:
+        from .models import TelegramChat
+
+        # Update or create chats
+        for dialog in result['dialogs']:
+            TelegramChat.objects.update_or_create(
+                session=session,
+                chat_id=dialog['id'],
+                defaults={
+                    'chat_type': dialog['type'],
+                    'title': dialog['title'],
+                    'username': dialog.get('username'),
+                    'is_archived': dialog.get('is_archived', False),
+                }
+            )
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': True, 'count': len(result['dialogs'])})
+
+        messages.success(request, f'Synced {len(result["dialogs"])} chats.')
+    else:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'success': False, 'error': result.get('error')})
+        messages.error(request, result.get('error', 'Failed to sync chats'))
 
     return redirect('telegram:dashboard')
 
@@ -314,11 +376,14 @@ def resend_code(request):
 
 
 def _save_telegram_session(request, result):
-    """Save Telegram session to database."""
+    """Save Telegram session to database. Creates new or updates existing for same phone."""
+    phone_number = request.session.get('telegram_phone', '')
+
+    # Check if session with this phone number already exists for user
     session, created = TelegramSession.objects.update_or_create(
         user=request.user,
+        phone_number=phone_number,
         defaults={
-            'phone_number': request.session.get('telegram_phone', ''),
             'telegram_user_id': result.get('user_id'),
             'telegram_username': result.get('username'),
             'telegram_first_name': result.get('first_name'),
@@ -328,6 +393,9 @@ def _save_telegram_session(request, result):
     )
     session.set_session_string(result['session_string'])
     session.save()
+
+    # Set this as the current session
+    session.set_as_current()
 
 
 def _clear_telegram_session_data(request):
@@ -344,482 +412,459 @@ def _clear_telegram_session_data(request):
 @login_required
 def chat_list(request):
     """View all chats from database."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return redirect('telegram:connect')
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
 
-        # Filter by type if requested
-        chat_type = request.GET.get('type', 'all')
-        chats = TelegramChat.objects.filter(session=session)
+    # Filter by type if requested
+    chat_type = request.GET.get('type', 'all')
+    chats = TelegramChat.objects.filter(session=session)
 
-        if chat_type != 'all':
-            if chat_type == 'groups':
-                chats = chats.filter(chat_type__in=['group', 'supergroup'])
-            elif chat_type == 'channels':
-                chats = chats.filter(chat_type='channel')
-            elif chat_type == 'users':
-                chats = chats.filter(chat_type='user')
+    if chat_type != 'all':
+        if chat_type == 'groups':
+            chats = chats.filter(chat_type__in=['group', 'supergroup'])
+        elif chat_type == 'channels':
+            chats = chats.filter(chat_type='channel')
+        elif chat_type == 'users':
+            chats = chats.filter(chat_type='user')
 
-        # Order by last synced
-        chats = chats.order_by('-last_synced')
+    # Order by last synced
+    chats = chats.order_by('-last_synced')
 
-        # Convert to list of dicts for template compatibility
-        chat_list = []
-        for chat in chats:
-            last_message = chat.messages.first()
-            chat_list.append({
-                'id': chat.chat_id,
-                'title': chat.title,
-                'type': chat.chat_type,
-                'username': chat.username,
-                'members_count': chat.members_count,
-                'is_archived': chat.is_archived,
-                'is_pinned': chat.is_pinned,
-                'unread_count': 0,
-                'last_message': {
-                    'text': last_message.text[:100] if last_message else '',
-                    'date': last_message.date.isoformat() if last_message else None,
-                } if last_message else None,
-                'total_messages': chat.total_messages,
-                'last_synced': chat.last_synced,
-            })
+    # Convert to list of dicts for template compatibility
+    chat_list = []
+    for chat in chats:
+        last_message = chat.messages.first()
+        chat_list.append({
+            'id': chat.chat_id,
+            'title': chat.title,
+            'type': chat.chat_type,
+            'username': chat.username,
+            'members_count': chat.members_count,
+            'is_archived': chat.is_archived,
+            'is_pinned': chat.is_pinned,
+            'unread_count': 0,
+            'last_message': {
+                'text': last_message.text[:100] if last_message else '',
+                'date': last_message.date.isoformat() if last_message else None,
+            } if last_message else None,
+            'total_messages': chat.total_messages,
+            'last_synced': chat.last_synced,
+        })
 
-        total = TelegramChat.objects.filter(session=session).count()
+    total = TelegramChat.objects.filter(session=session).count()
+    all_sessions = get_all_user_sessions(request.user)
 
-        context = {
-            'chats': chat_list,
-            'total': total,
-            'current_filter': chat_type,
-            'session': session,
-            'needs_sync': total == 0,
-        }
-        return render(request, 'telegram_functionality/chat_list.html', context)
-
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+    context = {
+        'chats': chat_list,
+        'total': total,
+        'current_filter': chat_type,
+        'session': session,
+        'all_sessions': all_sessions,
+        'needs_sync': total == 0,
+    }
+    return render(request, 'telegram_functionality/chat_list.html', context)
 
 
 @login_required
 def chat_messages(request, chat_id):
     """View messages from database for a specific chat."""
     chat_id = int(chat_id)  # Convert from string (re_path passes as string)
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    # Get chat from database
     try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return redirect('telegram:connect')
+        chat = TelegramChat.objects.get(session=session, chat_id=chat_id)
+    except TelegramChat.DoesNotExist:
+        messages.error(request, 'Chat not found. Please sync your chats first.')
+        return redirect('telegram:chats')
 
-        # Get chat from database
-        try:
-            chat = TelegramChat.objects.get(session=session, chat_id=chat_id)
-        except TelegramChat.DoesNotExist:
-            messages.error(request, 'Chat not found. Please sync your chats first.')
-            return redirect('telegram:chats')
+    # Get messages from database
+    show_deleted = request.GET.get('show_deleted', 'false') == 'true'
+    chat_messages_qs = TelegramMessage.objects.filter(chat=chat)
 
-        # Get messages from database
-        show_deleted = request.GET.get('show_deleted', 'false') == 'true'
-        chat_messages_qs = TelegramMessage.objects.filter(chat=chat)
+    if not show_deleted:
+        chat_messages_qs = chat_messages_qs.filter(is_deleted=False)
 
-        if not show_deleted:
-            chat_messages_qs = chat_messages_qs.filter(is_deleted=False)
+    chat_messages_qs = chat_messages_qs.order_by('-date')
 
-        chat_messages_qs = chat_messages_qs.order_by('-date')
+    # Pagination
+    page = int(request.GET.get('page', 1))
+    per_page = int(request.GET.get('limit', 50))
+    offset = (page - 1) * per_page
+    total_messages = chat_messages_qs.count()
+    total_pages = (total_messages + per_page - 1) // per_page
 
-        # Pagination
-        page = int(request.GET.get('page', 1))
-        per_page = int(request.GET.get('limit', 50))
-        offset = (page - 1) * per_page
-        total_messages = chat_messages_qs.count()
-        total_pages = (total_messages + per_page - 1) // per_page
+    message_list = chat_messages_qs[offset:offset + per_page]
 
-        message_list = chat_messages_qs[offset:offset + per_page]
+    # Convert to list of dicts for template compatibility
+    msg_list = []
+    for msg in message_list:
+        msg_list.append({
+            'id': msg.message_id,
+            'text': msg.text,
+            'date': msg.date.isoformat() if msg.date else None,
+            'sender_id': msg.sender_id,
+            'sender_name': msg.sender_name,
+            'is_outgoing': msg.is_outgoing,
+            'has_media': msg.has_media,
+            'media_type': msg.media_type,
+            'reply_to_msg_id': msg.reply_to_msg_id,
+            'forwards': msg.forwards,
+            'views': msg.views,
+            'is_deleted': msg.is_deleted,
+            'deleted_at': msg.deleted_at.isoformat() if msg.deleted_at else None,
+        })
 
-        # Convert to list of dicts for template compatibility
-        msg_list = []
-        for msg in message_list:
-            msg_list.append({
-                'id': msg.message_id,
-                'text': msg.text,
-                'date': msg.date.isoformat() if msg.date else None,
-                'sender_id': msg.sender_id,
-                'sender_name': msg.sender_name,
-                'is_outgoing': msg.is_outgoing,
-                'has_media': msg.has_media,
-                'media_type': msg.media_type,
-                'reply_to_msg_id': msg.reply_to_msg_id,
-                'forwards': msg.forwards,
-                'views': msg.views,
-                'is_deleted': msg.is_deleted,
-                'deleted_at': msg.deleted_at.isoformat() if msg.deleted_at else None,
-            })
+    # Count deleted messages in this chat
+    deleted_count = TelegramMessage.objects.filter(chat=chat, is_deleted=True).count()
+    all_sessions = get_all_user_sessions(request.user)
 
-        # Count deleted messages in this chat
-        deleted_count = TelegramMessage.objects.filter(chat=chat, is_deleted=True).count()
-
-        context = {
-            'chat': {
-                'id': chat.chat_id,
-                'title': chat.title,
-                'type': chat.chat_type,
-                'username': chat.username,
-                'members_count': chat.members_count,
-            },
-            'chat_messages': msg_list,
-            'chat_id': chat_id,
-            'total_messages': total_messages,
-            'deleted_count': deleted_count,
-            'page': page,
-            'per_page': per_page,
-            'total_pages': total_pages,
-            'show_deleted': show_deleted,
-            'session': session,
-            'last_synced': chat.last_synced,
-        }
-        return render(request, 'telegram_functionality/chat_messages.html', context)
-
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+    context = {
+        'chat': {
+            'id': chat.chat_id,
+            'title': chat.title,
+            'type': chat.chat_type,
+            'username': chat.username,
+            'members_count': chat.members_count,
+        },
+        'chat_messages': msg_list,
+        'chat_id': chat_id,
+        'total_messages': total_messages,
+        'deleted_count': deleted_count,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+        'show_deleted': show_deleted,
+        'session': session,
+        'all_sessions': all_sessions,
+        'last_synced': chat.last_synced,
+    }
+    return render(request, 'telegram_functionality/chat_messages.html', context)
 
 
 @login_required
 def load_more_messages(request, chat_id):
     """Load more messages (AJAX endpoint)."""
     chat_id = int(chat_id)  # Convert from string (re_path passes as string)
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return JsonResponse({'success': False, 'error': 'Session not active'})
+    session = get_current_session(request.user)
+    if not session or not session.is_active:
+        return JsonResponse({'success': False, 'error': 'Session not active'})
 
-        session_string = session.get_session_string()
-        offset_id = int(request.GET.get('offset_id', 0))
-        limit = int(request.GET.get('limit', 50))
+    session_string = session.get_session_string()
+    offset_id = int(request.GET.get('offset_id', 0))
+    limit = int(request.GET.get('limit', 50))
 
-        result = telegram_manager.get_messages(session_string, chat_id, limit=limit, offset_id=offset_id)
-        return JsonResponse(result)
-
-    except TelegramSession.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'No session found'})
+    result = telegram_manager.get_messages(session_string, chat_id, limit=limit, offset_id=offset_id)
+    return JsonResponse(result)
 
 
 @login_required
 def all_messages(request):
     """View all messages from database."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return redirect('telegram:connect')
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
 
-        # Get parameters
-        show_deleted = request.GET.get('show_deleted', 'false') == 'true'
-        per_page = int(request.GET.get('limit', 50))
-        page = int(request.GET.get('page', 1))
+    # Get parameters
+    show_deleted = request.GET.get('show_deleted', 'false') == 'true'
+    per_page = int(request.GET.get('limit', 50))
+    page = int(request.GET.get('page', 1))
 
-        # Get all messages from database
-        all_msgs = TelegramMessage.objects.filter(
-            chat__session=session
-        ).select_related('chat').order_by('-date')
+    # Get all messages from database
+    all_msgs = TelegramMessage.objects.filter(
+        chat__session=session
+    ).select_related('chat').order_by('-date')
 
-        if not show_deleted:
-            all_msgs = all_msgs.filter(is_deleted=False)
+    if not show_deleted:
+        all_msgs = all_msgs.filter(is_deleted=False)
 
-        # Pagination
-        total = all_msgs.count()
-        total_pages = (total + per_page - 1) // per_page
-        offset = (page - 1) * per_page
-        message_list = all_msgs[offset:offset + per_page]
+    # Pagination
+    total = all_msgs.count()
+    total_pages = (total + per_page - 1) // per_page
+    offset = (page - 1) * per_page
+    message_list = all_msgs[offset:offset + per_page]
 
-        # Convert to list of dicts
-        msg_list = []
-        for msg in message_list:
-            msg_list.append({
-                'id': msg.message_id,
-                'chat_id': msg.chat.chat_id,
-                'chat_title': msg.chat.title,
-                'chat_type': msg.chat.chat_type,
-                'text': msg.text,
-                'date': msg.date.isoformat() if msg.date else None,
-                'sender_id': msg.sender_id,
-                'sender_name': msg.sender_name,
-                'is_outgoing': msg.is_outgoing,
-                'has_media': msg.has_media,
-                'media_type': msg.media_type,
-                'is_deleted': msg.is_deleted,
-            })
+    # Convert to list of dicts
+    msg_list = []
+    for msg in message_list:
+        msg_list.append({
+            'id': msg.message_id,
+            'chat_id': msg.chat.chat_id,
+            'chat_title': msg.chat.title,
+            'chat_type': msg.chat.chat_type,
+            'text': msg.text,
+            'date': msg.date.isoformat() if msg.date else None,
+            'sender_id': msg.sender_id,
+            'sender_name': msg.sender_name,
+            'is_outgoing': msg.is_outgoing,
+            'has_media': msg.has_media,
+            'media_type': msg.media_type,
+            'is_deleted': msg.is_deleted,
+        })
 
-        # Get stats
-        total_chats = TelegramChat.objects.filter(session=session).count()
-        deleted_count = TelegramMessage.objects.filter(
-            chat__session=session, is_deleted=True
-        ).count()
+    # Get stats
+    total_chats = TelegramChat.objects.filter(session=session).count()
+    deleted_count = TelegramMessage.objects.filter(
+        chat__session=session, is_deleted=True
+    ).count()
+    all_sessions = get_all_user_sessions(request.user)
 
-        context = {
-            'telegram_messages': msg_list,
-            'total': total,
-            'total_chats': total_chats,
-            'deleted_count': deleted_count,
-            'page': page,
-            'per_page': per_page,
-            'total_pages': total_pages,
-            'show_deleted': show_deleted,
-            'session': session,
-        }
-        return render(request, 'telegram_functionality/all_messages.html', context)
-
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+    context = {
+        'telegram_messages': msg_list,
+        'total': total,
+        'total_chats': total_chats,
+        'deleted_count': deleted_count,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+        'show_deleted': show_deleted,
+        'session': session,
+        'all_sessions': all_sessions,
+    }
+    return render(request, 'telegram_functionality/all_messages.html', context)
 
 
 @login_required
 def sync_all_chats(request):
     """Sync all chats and their messages to database."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
+    session = get_current_session(request.user)
+    if not session or not session.is_active:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'success': False, 'error': 'Session not active'})
-
-        session_string = session.get_session_string()
-
-        # First, sync chats list
-        result = telegram_manager.get_all_chats(session_string)
-        if not result['success']:
-            return JsonResponse({'success': False, 'error': result.get('error')})
-
-        synced_chats = 0
-        synced_messages = 0
-
-        for dialog in result['chats']:
-            # Create or update chat
-            chat, created = TelegramChat.objects.update_or_create(
-                session=session,
-                chat_id=dialog['id'],
-                defaults={
-                    'chat_type': dialog['type'],
-                    'title': dialog['title'],
-                    'username': dialog.get('username'),
-                    'members_count': dialog.get('members_count'),
-                    'is_archived': dialog.get('is_archived', False),
-                    'is_pinned': dialog.get('is_pinned', False),
-                }
-            )
-            synced_chats += 1
-
-            # Fetch all messages for this chat
-            min_id = chat.last_message_id or 0
-            msg_result = telegram_manager.fetch_all_messages_from_chat(
-                session_string, dialog['id'], min_id=min_id
-            )
-
-            if msg_result['success']:
-                for msg_data in msg_result['messages']:
-                    TelegramMessage.objects.update_or_create(
-                        chat=chat,
-                        message_id=msg_data['id'],
-                        defaults={
-                            'text': msg_data['text'],
-                            'date': msg_data['date'],
-                            'sender_id': msg_data['sender_id'],
-                            'sender_name': msg_data['sender_name'],
-                            'is_outgoing': msg_data['is_outgoing'],
-                            'has_media': msg_data['has_media'],
-                            'media_type': msg_data['media_type'],
-                            'reply_to_msg_id': msg_data['reply_to_msg_id'],
-                            'forwards': msg_data['forwards'],
-                            'views': msg_data['views'],
-                        }
-                    )
-                    synced_messages += 1
-
-                # Update chat's last message ID
-                if msg_result['messages']:
-                    max_id = max(m['id'] for m in msg_result['messages'])
-                    chat.last_message_id = max_id
-                    chat.last_full_sync = timezone.now()
-                    chat.total_messages = chat.messages.count()
-                    chat.save()
-
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({
-                'success': True,
-                'chats': synced_chats,
-                'messages': synced_messages
-            })
-
-        messages.success(request, f'Synced {synced_chats} chats and {synced_messages} messages.')
-        return redirect('telegram:dashboard')
-
-    except TelegramSession.DoesNotExist:
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': False, 'error': 'No session found'})
         return redirect('telegram:connect')
+
+    session_string = session.get_session_string()
+
+    # First, sync chats list
+    result = telegram_manager.get_all_chats(session_string)
+    if not result['success']:
+        return JsonResponse({'success': False, 'error': result.get('error')})
+
+    synced_chats = 0
+    synced_messages = 0
+
+    for dialog in result['chats']:
+        # Create or update chat
+        chat, created = TelegramChat.objects.update_or_create(
+            session=session,
+            chat_id=dialog['id'],
+            defaults={
+                'chat_type': dialog['type'],
+                'title': dialog['title'],
+                'username': dialog.get('username'),
+                'members_count': dialog.get('members_count'),
+                'is_archived': dialog.get('is_archived', False),
+                'is_pinned': dialog.get('is_pinned', False),
+            }
+        )
+        synced_chats += 1
+
+        # Fetch all messages for this chat
+        min_id = chat.last_message_id or 0
+        msg_result = telegram_manager.fetch_all_messages_from_chat(
+            session_string, dialog['id'], min_id=min_id
+        )
+
+        if msg_result['success']:
+            for msg_data in msg_result['messages']:
+                TelegramMessage.objects.update_or_create(
+                    chat=chat,
+                    message_id=msg_data['id'],
+                    defaults={
+                        'text': msg_data['text'],
+                        'date': msg_data['date'],
+                        'sender_id': msg_data['sender_id'],
+                        'sender_name': msg_data['sender_name'],
+                        'is_outgoing': msg_data['is_outgoing'],
+                        'has_media': msg_data['has_media'],
+                        'media_type': msg_data['media_type'],
+                        'reply_to_msg_id': msg_data['reply_to_msg_id'],
+                        'forwards': msg_data['forwards'],
+                        'views': msg_data['views'],
+                    }
+                )
+                synced_messages += 1
+
+            # Update chat's last message ID
+            if msg_result['messages']:
+                max_id = max(m['id'] for m in msg_result['messages'])
+                chat.last_message_id = max_id
+                chat.last_full_sync = timezone.now()
+                chat.total_messages = chat.messages.count()
+                chat.save()
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({
+            'success': True,
+            'chats': synced_chats,
+            'messages': synced_messages
+        })
+
+    messages.success(request, f'Synced {synced_chats} chats and {synced_messages} messages.')
+    return redirect('telegram:dashboard')
 
 
 @login_required
 def sync_chat_messages(request, chat_id):
     """Sync messages for a specific chat."""
     chat_id = int(chat_id)
+    session = get_current_session(request.user)
+    if not session or not session.is_active:
+        return JsonResponse({'success': False, 'error': 'Session not active'})
+
+    session_string = session.get_session_string()
+
+    # Get or create chat
     try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return JsonResponse({'success': False, 'error': 'Session not active'})
+        chat = TelegramChat.objects.get(session=session, chat_id=chat_id)
+    except TelegramChat.DoesNotExist:
+        # Fetch chat info first
+        chat_result = telegram_manager.get_chat_info(session_string, chat_id)
+        if not chat_result['success']:
+            return JsonResponse({'success': False, 'error': 'Chat not found'})
 
-        session_string = session.get_session_string()
-
-        # Get or create chat
-        try:
-            chat = TelegramChat.objects.get(session=session, chat_id=chat_id)
-        except TelegramChat.DoesNotExist:
-            # Fetch chat info first
-            chat_result = telegram_manager.get_chat_info(session_string, chat_id)
-            if not chat_result['success']:
-                return JsonResponse({'success': False, 'error': 'Chat not found'})
-
-            chat = TelegramChat.objects.create(
-                session=session,
-                chat_id=chat_id,
-                chat_type=chat_result['chat']['type'],
-                title=chat_result['chat']['title'],
-                username=chat_result['chat'].get('username'),
-                members_count=chat_result['chat'].get('members_count'),
-            )
-
-        # Fetch all messages (incremental if we have last_message_id)
-        min_id = chat.last_message_id or 0
-        result = telegram_manager.fetch_all_messages_from_chat(
-            session_string, chat_id, min_id=min_id
+        chat = TelegramChat.objects.create(
+            session=session,
+            chat_id=chat_id,
+            chat_type=chat_result['chat']['type'],
+            title=chat_result['chat']['title'],
+            username=chat_result['chat'].get('username'),
+            members_count=chat_result['chat'].get('members_count'),
         )
 
-        if not result['success']:
-            return JsonResponse({'success': False, 'error': result.get('error')})
+    # Fetch all messages (incremental if we have last_message_id)
+    min_id = chat.last_message_id or 0
+    result = telegram_manager.fetch_all_messages_from_chat(
+        session_string, chat_id, min_id=min_id
+    )
 
-        synced = 0
-        for msg_data in result['messages']:
-            TelegramMessage.objects.update_or_create(
-                chat=chat,
-                message_id=msg_data['id'],
-                defaults={
-                    'text': msg_data['text'],
-                    'date': msg_data['date'],
-                    'sender_id': msg_data['sender_id'],
-                    'sender_name': msg_data['sender_name'],
-                    'is_outgoing': msg_data['is_outgoing'],
-                    'has_media': msg_data['has_media'],
-                    'media_type': msg_data['media_type'],
-                    'reply_to_msg_id': msg_data['reply_to_msg_id'],
-                    'forwards': msg_data['forwards'],
-                    'views': msg_data['views'],
-                }
-            )
-            synced += 1
+    if not result['success']:
+        return JsonResponse({'success': False, 'error': result.get('error')})
 
-        # Update chat metadata
-        if result['messages']:
-            max_id = max(m['id'] for m in result['messages'])
-            chat.last_message_id = max_id
-        chat.last_full_sync = timezone.now()
-        chat.total_messages = chat.messages.count()
-        chat.save()
+    synced = 0
+    for msg_data in result['messages']:
+        TelegramMessage.objects.update_or_create(
+            chat=chat,
+            message_id=msg_data['id'],
+            defaults={
+                'text': msg_data['text'],
+                'date': msg_data['date'],
+                'sender_id': msg_data['sender_id'],
+                'sender_name': msg_data['sender_name'],
+                'is_outgoing': msg_data['is_outgoing'],
+                'has_media': msg_data['has_media'],
+                'media_type': msg_data['media_type'],
+                'reply_to_msg_id': msg_data['reply_to_msg_id'],
+                'forwards': msg_data['forwards'],
+                'views': msg_data['views'],
+            }
+        )
+        synced += 1
 
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': True, 'synced': synced})
+    # Update chat metadata
+    if result['messages']:
+        max_id = max(m['id'] for m in result['messages'])
+        chat.last_message_id = max_id
+    chat.last_full_sync = timezone.now()
+    chat.total_messages = chat.messages.count()
+    chat.save()
 
-        messages.success(request, f'Synced {synced} messages.')
-        return redirect('telegram:chat_messages', chat_id=chat_id)
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'synced': synced})
 
-    except TelegramSession.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'No session found'})
+    messages.success(request, f'Synced {synced} messages.')
+    return redirect('telegram:chat_messages', chat_id=chat_id)
 
 
 @login_required
 def check_deleted_messages(request, chat_id=None):
     """Check for deleted messages by comparing DB with Telegram API."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return JsonResponse({'success': False, 'error': 'Session not active'})
+    session = get_current_session(request.user)
+    if not session or not session.is_active:
+        return JsonResponse({'success': False, 'error': 'Session not active'})
 
-        session_string = session.get_session_string()
-        deleted_count = 0
+    session_string = session.get_session_string()
+    deleted_count = 0
 
-        if chat_id:
-            chat_id = int(chat_id)
-            chats = TelegramChat.objects.filter(session=session, chat_id=chat_id)
-        else:
-            chats = TelegramChat.objects.filter(session=session)
+    if chat_id:
+        chat_id = int(chat_id)
+        chats = TelegramChat.objects.filter(session=session, chat_id=chat_id)
+    else:
+        chats = TelegramChat.objects.filter(session=session)
 
-        for chat in chats:
-            # Get current message IDs from Telegram
-            result = telegram_manager.get_message_ids_from_chat(
-                session_string, chat.chat_id
-            )
+    for chat in chats:
+        # Get current message IDs from Telegram
+        result = telegram_manager.get_message_ids_from_chat(
+            session_string, chat.chat_id
+        )
 
-            if not result['success']:
-                continue
+        if not result['success']:
+            continue
 
-            telegram_ids = result['message_ids']
+        telegram_ids = result['message_ids']
 
-            # Get message IDs we have in database (not already marked deleted)
-            db_messages = TelegramMessage.objects.filter(
-                chat=chat, is_deleted=False
-            )
+        # Get message IDs we have in database (not already marked deleted)
+        db_messages = TelegramMessage.objects.filter(
+            chat=chat, is_deleted=False
+        )
 
-            for msg in db_messages:
-                if msg.message_id not in telegram_ids:
-                    # Message was deleted from Telegram
-                    msg.is_deleted = True
-                    msg.deleted_at = timezone.now()
-                    msg.save()
-                    deleted_count += 1
+        for msg in db_messages:
+            if msg.message_id not in telegram_ids:
+                # Message was deleted from Telegram
+                msg.is_deleted = True
+                msg.deleted_at = timezone.now()
+                msg.save()
+                deleted_count += 1
 
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': True, 'deleted_found': deleted_count})
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': True, 'deleted_found': deleted_count})
 
-        if deleted_count > 0:
-            messages.info(request, f'Found {deleted_count} deleted messages.')
-        else:
-            messages.info(request, 'No deleted messages found.')
+    if deleted_count > 0:
+        messages.info(request, f'Found {deleted_count} deleted messages.')
+    else:
+        messages.info(request, 'No deleted messages found.')
 
-        return redirect('telegram:deleted_messages')
-
-    except TelegramSession.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'No session found'})
+    return redirect('telegram:deleted_messages')
 
 
 @login_required
 def deleted_messages(request):
     """View all deleted messages."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return redirect('telegram:connect')
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
 
-        # Get filter parameters
-        chat_id = request.GET.get('chat_id')
+    # Get filter parameters
+    chat_id = request.GET.get('chat_id')
 
-        deleted_msgs = TelegramMessage.objects.filter(
-            chat__session=session,
-            is_deleted=True
-        ).select_related('chat').order_by('-deleted_at')
+    deleted_msgs = TelegramMessage.objects.filter(
+        chat__session=session,
+        is_deleted=True
+    ).select_related('chat').order_by('-deleted_at')
 
-        if chat_id:
-            deleted_msgs = deleted_msgs.filter(chat__chat_id=int(chat_id))
+    if chat_id:
+        deleted_msgs = deleted_msgs.filter(chat__chat_id=int(chat_id))
 
-        # Get chats with deleted messages for filter dropdown
-        chats_with_deleted = TelegramChat.objects.filter(
-            session=session,
-            messages__is_deleted=True
-        ).distinct()
+    # Get chats with deleted messages for filter dropdown
+    chats_with_deleted = TelegramChat.objects.filter(
+        session=session,
+        messages__is_deleted=True
+    ).distinct()
 
-        context = {
-            'deleted_messages': deleted_msgs,
-            'chats_with_deleted': chats_with_deleted,
-            'selected_chat_id': chat_id,
-            'total_deleted': deleted_msgs.count(),
-            'session': session,
-        }
-        return render(request, 'telegram_functionality/deleted_messages.html', context)
+    all_sessions = get_all_user_sessions(request.user)
 
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+    context = {
+        'deleted_messages': deleted_msgs,
+        'chats_with_deleted': chats_with_deleted,
+        'selected_chat_id': chat_id,
+        'total_deleted': deleted_msgs.count(),
+        'session': session,
+        'all_sessions': all_sessions,
+    }
+    return render(request, 'telegram_functionality/deleted_messages.html', context)
 
 
 @login_required
@@ -828,102 +873,99 @@ def start_sync(request):
     """Start a new background sync task."""
     logger.info(f"User {request.user.id} initiating background sync")
 
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            logger.warning(f"User {request.user.id} attempted sync with inactive session")
-            messages.error(request, 'Telegram session not active')
-            return redirect('telegram:connect')
-
-        # Check if there's already a running sync
-        running_sync = SyncTask.objects.filter(
-            session=session,
-            status__in=['pending', 'running']
-        ).first()
-
-        if running_sync:
-            logger.info(f"User {request.user.id} has existing sync in progress: Task #{running_sync.id}")
-            messages.info(request, 'A sync is already in progress.')
-            return redirect('telegram:sync_status', task_id=running_sync.id)
-
-        # Create new sync task
-        sync_task = SyncTask.objects.create(
-            session=session,
-            task_type='sync_all',
-            status='pending'
-        )
-        logger.info(f"Created SyncTask #{sync_task.id} for user {request.user.id}")
-        log_user_action(request.user, "sync_started", f"Task ID: {sync_task.id}")
-
-        # Start background sync
-        start_background_sync(sync_task)
-        logger.info(f"Background sync started for Task #{sync_task.id}")
-
-        messages.success(request, 'Sync started! You can continue browsing while syncing.')
-        return redirect('telegram:sync_status', task_id=sync_task.id)
-
-    except TelegramSession.DoesNotExist:
-        logger.error(f"User {request.user.id} has no Telegram session")
-        messages.error(request, 'No Telegram session found.')
+    session = get_current_session(request.user)
+    if not session or not session.is_active:
+        logger.warning(f"User {request.user.id} attempted sync with inactive session")
+        messages.error(request, 'Telegram session not active')
         return redirect('telegram:connect')
+
+    # Check if there's already a running sync
+    running_sync = SyncTask.objects.filter(
+        session=session,
+        status__in=['pending', 'running']
+    ).first()
+
+    if running_sync:
+        logger.info(f"User {request.user.id} has existing sync in progress: Task #{running_sync.id}")
+        messages.info(request, 'A sync is already in progress.')
+        return redirect('telegram:sync_status', task_id=running_sync.id)
+
+    # Create new sync task
+    sync_task = SyncTask.objects.create(
+        session=session,
+        task_type='sync_all',
+        status='pending'
+    )
+    logger.info(f"Created SyncTask #{sync_task.id} for user {request.user.id}")
+    log_user_action(request.user, "sync_started", f"Task ID: {sync_task.id}")
+
+    # Start background sync
+    start_background_sync(sync_task)
+    logger.info(f"Background sync started for Task #{sync_task.id}")
+
+    messages.success(request, 'Sync started! You can continue browsing while syncing.')
+    return redirect('telegram:sync_status', task_id=sync_task.id)
 
 
 @login_required
 def sync_status(request, task_id):
     """View sync task status page."""
+    session = get_current_session(request.user)
+    if not session:
+        return redirect('telegram:connect')
+
     try:
-        session = request.user.telegram_session
         sync_task = SyncTask.objects.get(id=task_id, session=session)
-
-        # Get recent sync history
-        recent_tasks = SyncTask.objects.filter(
-            session=session
-        ).exclude(id=task_id).order_by('-created_at')[:5]
-
-        context = {
-            'task': sync_task,
-            'recent_tasks': recent_tasks,
-            'session': session,
-        }
-        return render(request, 'telegram_functionality/sync_status.html', context)
-
     except SyncTask.DoesNotExist:
         messages.error(request, 'Sync task not found.')
         return redirect('telegram:dashboard')
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+
+    # Get recent sync history
+    recent_tasks = SyncTask.objects.filter(
+        session=session
+    ).exclude(id=task_id).order_by('-created_at')[:5]
+
+    all_sessions = get_all_user_sessions(request.user)
+
+    context = {
+        'task': sync_task,
+        'recent_tasks': recent_tasks,
+        'session': session,
+        'all_sessions': all_sessions,
+    }
+    return render(request, 'telegram_functionality/sync_status.html', context)
 
 
 @login_required
 def sync_progress_api(request, task_id):
     """API endpoint to get sync progress (for AJAX polling)."""
+    session = get_current_session(request.user)
+    if not session:
+        return JsonResponse({'success': False, 'error': 'No session found'})
+
     try:
-        session = request.user.telegram_session
         sync_task = SyncTask.objects.get(id=task_id, session=session)
-
-        return JsonResponse({
-            'success': True,
-            'status': sync_task.status,
-            'progress_percent': sync_task.progress_percent,
-            'total_chats': sync_task.total_chats,
-            'synced_chats': sync_task.synced_chats,
-            'total_messages': sync_task.total_messages,
-            'synced_messages': sync_task.synced_messages,
-            'new_messages': sync_task.new_messages,
-            'current_chat_title': sync_task.current_chat_title,
-            'current_chat_progress': sync_task.current_chat_progress,
-            'is_running': sync_task.is_running,
-            'is_finished': sync_task.is_finished,
-            'error_message': sync_task.error_message,
-            'log': sync_task.log,
-            'started_at': sync_task.started_at.isoformat() if sync_task.started_at else None,
-            'completed_at': sync_task.completed_at.isoformat() if sync_task.completed_at else None,
-        })
-
     except SyncTask.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Sync task not found'})
-    except TelegramSession.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'No session found'})
+
+    return JsonResponse({
+        'success': True,
+        'status': sync_task.status,
+        'progress_percent': sync_task.progress_percent,
+        'total_chats': sync_task.total_chats,
+        'synced_chats': sync_task.synced_chats,
+        'total_messages': sync_task.total_messages,
+        'synced_messages': sync_task.synced_messages,
+        'new_messages': sync_task.new_messages,
+        'current_chat_title': sync_task.current_chat_title,
+        'current_chat_progress': sync_task.current_chat_progress,
+        'is_running': sync_task.is_running,
+        'is_finished': sync_task.is_finished,
+        'error_message': sync_task.error_message,
+        'log': sync_task.log,
+        'started_at': sync_task.started_at.isoformat() if sync_task.started_at else None,
+        'completed_at': sync_task.completed_at.isoformat() if sync_task.completed_at else None,
+    })
 
 
 @login_required
@@ -932,41 +974,90 @@ def cancel_sync(request, task_id):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST required'})
 
+    session = get_current_session(request.user)
+    if not session:
+        return JsonResponse({'success': False, 'error': 'No session found'})
+
     try:
-        session = request.user.telegram_session
         sync_task = SyncTask.objects.get(id=task_id, session=session)
-
-        if sync_task.status in ['pending', 'running']:
-            sync_task.status = 'cancelled'
-            sync_task.completed_at = timezone.now()
-            sync_task.save()
-            sync_task.add_log('Sync cancelled by user')
-
-            return JsonResponse({'success': True, 'message': 'Sync cancelled'})
-        else:
-            return JsonResponse({'success': False, 'error': 'Sync is not running'})
-
     except SyncTask.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Sync task not found'})
-    except TelegramSession.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'No session found'})
+
+    if sync_task.status in ['pending', 'running']:
+        sync_task.status = 'cancelled'
+        sync_task.completed_at = timezone.now()
+        sync_task.save()
+        sync_task.add_log('Sync cancelled by user')
+
+        return JsonResponse({'success': True, 'message': 'Sync cancelled'})
+    else:
+        return JsonResponse({'success': False, 'error': 'Sync is not running'})
 
 
 @login_required
 def sync_history(request):
     """View all sync task history."""
-    try:
-        session = request.user.telegram_session
-        if not session.is_active:
-            return redirect('telegram:connect')
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
 
-        tasks = SyncTask.objects.filter(session=session).order_by('-created_at')
+    tasks = SyncTask.objects.filter(session=session).order_by('-created_at')
+    all_sessions = get_all_user_sessions(request.user)
 
-        context = {
-            'tasks': tasks,
-            'session': session,
-        }
-        return render(request, 'telegram_functionality/sync_history.html', context)
+    context = {
+        'tasks': tasks,
+        'session': session,
+        'all_sessions': all_sessions,
+    }
+    return render(request, 'telegram_functionality/sync_history.html', context)
 
-    except TelegramSession.DoesNotExist:
-        return redirect('telegram:connect')
+
+# Session management views
+
+
+@login_required
+def sessions_list(request):
+    """View all Telegram sessions for the user."""
+    sessions = get_all_user_sessions(request.user)
+
+    context = {
+        'sessions': sessions,
+        'session_count': sessions.count(),
+    }
+    return render(request, 'telegram_functionality/sessions.html', context)
+
+
+@login_required
+def switch_session(request, session_id):
+    """Switch to a different Telegram session."""
+    session = get_object_or_404(TelegramSession, id=session_id, user=request.user)
+
+    if not session.is_active:
+        messages.error(request, 'Cannot switch to an inactive session.')
+        return redirect('telegram:sessions')
+
+    session.set_as_current()
+    messages.success(request, f'Switched to session: {session.get_display_name()}')
+
+    # Redirect to dashboard or wherever the user came from
+    next_url = request.GET.get('next', 'telegram:dashboard')
+    return redirect(next_url)
+
+
+@login_required
+def update_session(request, session_id):
+    """Update session display name."""
+    session = get_object_or_404(TelegramSession, id=session_id, user=request.user)
+
+    if request.method == 'POST':
+        display_name = request.POST.get('display_name', '').strip()
+        if display_name:
+            session.display_name = display_name
+            session.save(update_fields=['display_name'])
+            messages.success(request, 'Session name updated.')
+        else:
+            session.display_name = None
+            session.save(update_fields=['display_name'])
+            messages.success(request, 'Session name cleared.')
+
+    return redirect('telegram:sessions')

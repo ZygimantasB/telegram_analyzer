@@ -6,12 +6,12 @@ import hashlib
 
 
 class TelegramSession(models.Model):
-    """Model to store user's Telegram session data."""
+    """Model to store user's Telegram session data. Supports multiple sessions per user."""
 
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='telegram_session'
+        related_name='telegram_sessions'
     )
     phone_number = models.CharField(max_length=20)
     session_string = models.TextField(blank=True, null=True)
@@ -20,15 +20,39 @@ class TelegramSession(models.Model):
     telegram_first_name = models.CharField(max_length=100, blank=True, null=True)
     telegram_last_name = models.CharField(max_length=100, blank=True, null=True)
     is_active = models.BooleanField(default=False)
+    is_current = models.BooleanField(default=False)  # Which session is currently selected
+    display_name = models.CharField(max_length=100, blank=True, null=True)  # Custom name for the session
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = 'Telegram Session'
         verbose_name_plural = 'Telegram Sessions'
+        unique_together = ['user', 'phone_number']  # One phone number per user
 
     def __str__(self):
-        return f"{self.user.email} - {self.phone_number}"
+        name = self.display_name or self.telegram_username or self.phone_number
+        return f"{self.user.email} - {name}"
+
+    def get_display_name(self):
+        """Get a user-friendly display name for the session."""
+        if self.display_name:
+            return self.display_name
+        if self.telegram_first_name:
+            name = self.telegram_first_name
+            if self.telegram_last_name:
+                name += f" {self.telegram_last_name}"
+            return name
+        if self.telegram_username:
+            return f"@{self.telegram_username}"
+        return self.phone_number
+
+    def set_as_current(self):
+        """Set this session as the current active session for the user."""
+        # Unset current from all other sessions for this user
+        TelegramSession.objects.filter(user=self.user, is_current=True).update(is_current=False)
+        self.is_current = True
+        self.save(update_fields=['is_current'])
 
     def _get_encryption_key(self):
         """Generate encryption key from Django secret key."""

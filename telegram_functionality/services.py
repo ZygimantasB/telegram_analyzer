@@ -126,7 +126,10 @@ class TelegramClientManager:
 
         return media_info
 
-    async def _download_media_async(self, client, message, save_dir, user_id, chat_id):
+    # Maximum file size for automatic download (1 MB)
+    MAX_MEDIA_SIZE = 1 * 1024 * 1024  # 1 MB in bytes
+
+    async def _download_media_async(self, client, message, save_dir, user_id, chat_id, max_size=None):
         """Download media from a message asynchronously.
 
         Args:
@@ -135,9 +138,10 @@ class TelegramClientManager:
             save_dir: Base directory for media storage
             user_id: User ID for path organization
             chat_id: Chat ID for path organization
+            max_size: Maximum file size in bytes (default: MAX_MEDIA_SIZE)
 
         Returns:
-            Dict with file path and media info, or None if no media/failed
+            Dict with file path and media info, or None if no media/failed/skipped
         """
         if not message.media:
             return None
@@ -145,6 +149,26 @@ class TelegramClientManager:
         media_info = self._get_media_info(message)
         if not media_info:
             return None
+
+        # Use default max size if not specified
+        if max_size is None:
+            max_size = self.MAX_MEDIA_SIZE
+
+        # Skip files larger than the limit
+        file_size = media_info.get('file_size', 0)
+        if file_size and file_size > max_size:
+            logger.debug(f"Skipping large media file ({file_size / 1024 / 1024:.2f} MB) for message {message.id}")
+            # Return info without downloading - mark as skipped
+            return {
+                'file_path': None,
+                'file_name': media_info['file_name'],
+                'file_size': file_size,
+                'mime_type': media_info['mime_type'],
+                'width': media_info['width'],
+                'height': media_info['height'],
+                'duration': media_info['duration'],
+                'skipped': True,  # Flag to indicate file was skipped
+            }
 
         try:
             # Create directory structure: media/telegram_media/user_id/chat_id/message_id/
@@ -689,6 +713,7 @@ class TelegramClientManager:
                                 msg_data['media_width'] = media_result['width']
                                 msg_data['media_height'] = media_result['height']
                                 msg_data['media_duration'] = media_result['duration']
+                                msg_data['media_skipped'] = media_result.get('skipped', False)
 
                         all_messages.append(msg_data)
 
@@ -887,6 +912,7 @@ def run_background_sync(sync_task_id):
                         messages = messages_result['messages']
                         new_count = 0
                         media_count = 0
+                        skipped_count = 0
 
                         for msg_data in messages:
                             try:
@@ -918,6 +944,8 @@ def run_background_sync(sync_task_id):
                                     new_count += 1
                                     if msg_data.get('media_file_path'):
                                         media_count += 1
+                                    elif msg_data.get('media_skipped'):
+                                        skipped_count += 1
                                 elif msg_data.get('media_file_path') and not msg_obj.media_file:
                                     # Update existing message with media if it wasn't downloaded before
                                     msg_obj.media_file = msg_data['media_file_path']
@@ -945,8 +973,9 @@ def run_background_sync(sync_task_id):
                         sync_task.new_messages += new_count
                         sync_task.total_messages += len(messages)
                         media_info = f", {media_count} media files" if media_count > 0 else ""
-                        sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new{media_info})')
-                        sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new, {media_count} media)")
+                        skipped_info = f", {skipped_count} skipped (>1MB)" if skipped_count > 0 else ""
+                        sync_task.add_log(f'  - Fetched {len(messages)} messages ({new_count} new{media_info}{skipped_info})')
+                        sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(messages)} messages ({new_count} new, {media_count} media, {skipped_count} skipped)")
                     else:
                         error_msg = messages_result.get("error", "Unknown error")
                         sync_logger.warning(f"Task #{sync_task_id}: Error syncing chat '{chat_title}': {error_msg}")

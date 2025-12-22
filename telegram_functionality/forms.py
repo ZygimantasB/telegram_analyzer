@@ -1,4 +1,5 @@
 from django import forms
+from .models import TelegramChat
 
 
 class PhoneNumberForm(forms.Form):
