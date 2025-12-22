@@ -5,14 +5,6 @@
 *.db
 CLAUDE.md
 
-*.tgs
-*.mp4
-*.mov
-*.jpg
-*.oga
-*.webp
-*.webpm
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
