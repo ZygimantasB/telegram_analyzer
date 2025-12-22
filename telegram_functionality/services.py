@@ -1290,6 +1290,7 @@ def run_background_sync(sync_task_id):
                                         membership.is_member = True
                                         membership.save()
 
+                                sync_task.synced_users += len(participants)
                                 sync_task.add_log(f'  - Synced {len(participants)} members ({new_users} new, {updated_users} updated)')
                                 sync_logger.debug(f"Task #{sync_task_id}: Chat '{chat_title}' - {len(participants)} members ({new_users} new)")
                             else:

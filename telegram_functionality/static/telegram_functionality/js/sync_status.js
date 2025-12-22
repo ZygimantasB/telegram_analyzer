@@ -81,6 +81,7 @@ function updateUI(data) {
     document.getElementById('totalMessages').textContent = formatNumber(data.total_messages);
     document.getElementById('newMessages').textContent = formatNumber(data.new_messages);
     document.getElementById('syncedChatsCount').textContent = data.synced_chats;
+    document.getElementById('syncedUsers').textContent = formatNumber(data.synced_users || 0);
 
     // Update log
     if (data.log) {

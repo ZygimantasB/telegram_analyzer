@@ -142,6 +142,7 @@ class SyncTask(models.Model):
     total_messages = models.IntegerField(default=0)
     synced_messages = models.IntegerField(default=0)
     new_messages = models.IntegerField(default=0)
+    synced_users = models.IntegerField(default=0)
 
     # Current activity
     current_chat_id = models.BigIntegerField(null=True, blank=True)

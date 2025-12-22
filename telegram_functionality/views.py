@@ -957,6 +957,7 @@ def sync_progress_api(request, task_id):
         'total_messages': sync_task.total_messages,
         'synced_messages': sync_task.synced_messages,
         'new_messages': sync_task.new_messages,
+        'synced_users': sync_task.synced_users,
         'current_chat_title': sync_task.current_chat_title,
         'current_chat_progress': sync_task.current_chat_progress,
         'is_running': sync_task.is_running,

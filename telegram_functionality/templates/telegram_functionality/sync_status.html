@@ -72,25 +72,31 @@
 
             <!-- Stats Grid -->
             <div class="row text-center">
-                <div class="col-md-3 col-6 mb-3">
+                <div class="col-lg col-md-4 col-6 mb-3">
                     <div class="stat-card bg-light rounded p-3">
                         <div class="stat-number text-primary" id="totalMessages">{{ task.total_messages }}</div>
                         <div class="stat-label text-muted">Messages Synced</div>
                     </div>
                 </div>
-                <div class="col-md-3 col-6 mb-3">
+                <div class="col-lg col-md-4 col-6 mb-3">
                     <div class="stat-card bg-light rounded p-3">
                         <div class="stat-number text-success" id="newMessages">{{ task.new_messages }}</div>
                         <div class="stat-label text-muted">New Messages</div>
                     </div>
                 </div>
-                <div class="col-md-3 col-6 mb-3">
+                <div class="col-lg col-md-4 col-6 mb-3">
                     <div class="stat-card bg-light rounded p-3">
                         <div class="stat-number text-info" id="syncedChatsCount">{{ task.synced_chats }}</div>
                         <div class="stat-label text-muted">Chats Synced</div>
                     </div>
                 </div>
-                <div class="col-md-3 col-6 mb-3">
+                <div class="col-lg col-md-6 col-6 mb-3">
+                    <div class="stat-card bg-light rounded p-3">
+                        <div class="stat-number text-warning" id="syncedUsers">{{ task.synced_users }}</div>
+                        <div class="stat-label text-muted">Users Synced</div>
+                    </div>
+                </div>
+                <div class="col-lg col-md-6 col-6 mb-3">
                     <div class="stat-card bg-light rounded p-3">
                         <div class="stat-number" id="elapsedTime">--:--</div>
                         <div class="stat-label text-muted">Elapsed Time</div>
