@@ -45,4 +45,8 @@ urlpatterns = [
 
     # Media download
     path('media/<int:message_id>/', views.download_media, name='download_media'),
+
+    # Search
+    path('search/', views.search_messages, name='search'),
+    path('search/chats/', views.search_chats, name='search_chats'),
 ]

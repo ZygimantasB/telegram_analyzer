@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.db.models import Q
 from django.conf import settings
 
-from .forms import PhoneNumberForm, VerificationCodeForm, TwoFactorForm
+from .forms import PhoneNumberForm, VerificationCodeForm, TwoFactorForm, AdvancedSearchForm
 from .models import TelegramSession, TelegramChat, TelegramMessage, SyncTask
 from .services import telegram_manager, start_background_sync
 
@@ -1061,3 +1061,186 @@ def update_session(request, session_id):
             messages.success(request, 'Session name cleared.')
 
     return redirect('telegram:sessions')
+
+
+# Search views
+
+
+@login_required
+def search_messages(request):
+    """Advanced search for messages."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    form = AdvancedSearchForm(request.GET or None, session=session)
+    results = []
+    total_results = 0
+    searched = False
+
+    if request.GET and form.is_valid():
+        searched = True
+        queryset = TelegramMessage.objects.filter(
+            chat__session=session
+        ).select_related('chat')
+
+        # Text search
+        query = form.cleaned_data.get('query')
+        if query:
+            queryset = queryset.filter(
+                Q(text__icontains=query) |
+                Q(sender_name__icontains=query)
+            )
+
+        # Date filters
+        date_from = form.cleaned_data.get('date_from')
+        if date_from:
+            queryset = queryset.filter(date__date__gte=date_from)
+
+        date_to = form.cleaned_data.get('date_to')
+        if date_to:
+            queryset = queryset.filter(date__date__lte=date_to)
+
+        # Chat filter
+        chat_id = form.cleaned_data.get('chat_id')
+        if chat_id:
+            queryset = queryset.filter(chat__chat_id=int(chat_id))
+
+        # Chat type filter
+        chat_type = form.cleaned_data.get('chat_type')
+        if chat_type:
+            if chat_type == 'group':
+                queryset = queryset.filter(chat__chat_type__in=['group', 'supergroup'])
+            else:
+                queryset = queryset.filter(chat__chat_type=chat_type)
+
+        # Sender filter
+        sender = form.cleaned_data.get('sender')
+        if sender:
+            queryset = queryset.filter(sender_name__icontains=sender)
+
+        # Direction filter
+        direction = form.cleaned_data.get('direction')
+        if direction == 'outgoing':
+            queryset = queryset.filter(is_outgoing=True)
+        elif direction == 'incoming':
+            queryset = queryset.filter(is_outgoing=False)
+
+        # Media filter
+        media_filter = form.cleaned_data.get('media_filter')
+        if media_filter == 'has_media':
+            queryset = queryset.filter(has_media=True)
+        elif media_filter == 'no_media':
+            queryset = queryset.filter(has_media=False)
+        elif media_filter == 'photo':
+            queryset = queryset.filter(has_media=True, media_mime_type__startswith='image/')
+        elif media_filter == 'video':
+            queryset = queryset.filter(has_media=True, media_mime_type__startswith='video/')
+        elif media_filter == 'document':
+            queryset = queryset.filter(has_media=True).exclude(
+                Q(media_mime_type__startswith='image/') |
+                Q(media_mime_type__startswith='video/') |
+                Q(media_mime_type__startswith='audio/')
+            )
+        elif media_filter == 'audio':
+            queryset = queryset.filter(has_media=True, media_mime_type__startswith='audio/')
+
+        # Deleted filter
+        deleted_filter = form.cleaned_data.get('deleted_filter')
+        if deleted_filter == 'deleted':
+            queryset = queryset.filter(is_deleted=True)
+        elif deleted_filter == 'not_deleted':
+            queryset = queryset.filter(is_deleted=False)
+
+        # Sort
+        sort_by = form.cleaned_data.get('sort_by') or '-date'
+        queryset = queryset.order_by(sort_by)
+
+        # Pagination
+        total_results = queryset.count()
+        page = int(request.GET.get('page', 1))
+        per_page = 50
+        offset = (page - 1) * per_page
+        total_pages = (total_results + per_page - 1) // per_page
+
+        results = queryset[offset:offset + per_page]
+
+        context = {
+            'form': form,
+            'results': results,
+            'total_results': total_results,
+            'searched': searched,
+            'session': session,
+            'all_sessions': get_all_user_sessions(request.user),
+            'page': page,
+            'per_page': per_page,
+            'total_pages': total_pages,
+        }
+    else:
+        context = {
+            'form': form,
+            'results': [],
+            'total_results': 0,
+            'searched': False,
+            'session': session,
+            'all_sessions': get_all_user_sessions(request.user),
+        }
+
+    return render(request, 'telegram_functionality/search.html', context)
+
+
+@login_required
+def search_chats(request):
+    """Search chats by name."""
+    session, redirect_response = get_session_or_redirect(request)
+    if redirect_response:
+        return redirect_response
+
+    query = request.GET.get('q', '').strip()
+    chat_type = request.GET.get('type', '')
+
+    chats = TelegramChat.objects.filter(session=session)
+
+    if query:
+        chats = chats.filter(
+            Q(title__icontains=query) |
+            Q(username__icontains=query)
+        )
+
+    if chat_type:
+        if chat_type == 'groups':
+            chats = chats.filter(chat_type__in=['group', 'supergroup'])
+        elif chat_type == 'channels':
+            chats = chats.filter(chat_type='channel')
+        elif chat_type == 'users':
+            chats = chats.filter(chat_type='user')
+
+    chats = chats.order_by('title')
+
+    # Build chat list with stats
+    chat_list = []
+    for chat in chats:
+        last_message = chat.messages.first()
+        chat_list.append({
+            'id': chat.chat_id,
+            'title': chat.title,
+            'type': chat.chat_type,
+            'username': chat.username,
+            'members_count': chat.members_count,
+            'total_messages': chat.total_messages,
+            'last_message': {
+                'text': last_message.text[:100] if last_message else '',
+                'date': last_message.date if last_message else None,
+            } if last_message else None,
+        })
+
+    context = {
+        'chats': chat_list,
+        'query': query,
+        'chat_type': chat_type,
+        'total': len(chat_list),
+        'session': session,
+        'all_sessions': get_all_user_sessions(request.user),
+    }
+
+    return render(request, 'telegram_functionality/search_chats.html', context)

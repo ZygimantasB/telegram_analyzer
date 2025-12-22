@@ -16,6 +16,9 @@
             <p class="text-muted mb-0">{{ total }} messages from {{ max_chats }} chats</p>
         </div>
         <div class="d-flex gap-2">
+            <a href="{% url 'telegram:search' %}" class="btn btn-success">
+                <i class="bi bi-search"></i> Advanced Search
+            </a>
             <a href="{% url 'telegram:chats' %}" class="btn btn-outline-secondary">
                 <i class="bi bi-grid"></i> Chat View
             </a>

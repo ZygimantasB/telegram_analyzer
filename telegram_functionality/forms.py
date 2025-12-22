@@ -53,3 +53,149 @@ class TwoFactorForm(forms.Form):
         }),
         help_text='Enter your Telegram two-factor authentication password'
     )
+
+
+class AdvancedSearchForm(forms.Form):
+    """Advanced search form for messages."""
+
+    # Text search
+    query = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Search messages...',
+        }),
+        label='Keywords'
+    )
+
+    # Date range
+    date_from = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date',
+        }),
+        label='From Date'
+    )
+
+    date_to = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date',
+        }),
+        label='To Date'
+    )
+
+    # Chat filter (will be populated dynamically)
+    chat_id = forms.ChoiceField(
+        required=False,
+        choices=[('', 'All Chats')],
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        label='Chat'
+    )
+
+    # Chat type filter
+    CHAT_TYPE_CHOICES = [
+        ('', 'All Types'),
+        ('user', 'Private Chats'),
+        ('group', 'Groups'),
+        ('supergroup', 'Supergroups'),
+        ('channel', 'Channels'),
+    ]
+    chat_type = forms.ChoiceField(
+        required=False,
+        choices=CHAT_TYPE_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        label='Chat Type'
+    )
+
+    # Sender filter
+    sender = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Sender name...',
+        }),
+        label='From (Sender)'
+    )
+
+    # Message direction
+    DIRECTION_CHOICES = [
+        ('', 'All Messages'),
+        ('outgoing', 'Sent by me'),
+        ('incoming', 'Received'),
+    ]
+    direction = forms.ChoiceField(
+        required=False,
+        choices=DIRECTION_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        label='Direction'
+    )
+
+    # Media filter
+    MEDIA_CHOICES = [
+        ('', 'All Messages'),
+        ('has_media', 'With Media'),
+        ('no_media', 'Text Only'),
+        ('photo', 'Photos'),
+        ('video', 'Videos'),
+        ('document', 'Documents'),
+        ('audio', 'Audio'),
+    ]
+    media_filter = forms.ChoiceField(
+        required=False,
+        choices=MEDIA_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        label='Media'
+    )
+
+    # Deleted messages filter
+    DELETED_CHOICES = [
+        ('', 'All Messages'),
+        ('deleted', 'Deleted Only'),
+        ('not_deleted', 'Active Only'),
+    ]
+    deleted_filter = forms.ChoiceField(
+        required=False,
+        choices=DELETED_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        label='Status'
+    )
+
+    # Sort options
+    SORT_CHOICES = [
+        ('-date', 'Newest First'),
+        ('date', 'Oldest First'),
+        ('-deleted_at', 'Recently Deleted'),
+        ('sender_name', 'Sender A-Z'),
+        ('-sender_name', 'Sender Z-A'),
+    ]
+    sort_by = forms.ChoiceField(
+        required=False,
+        choices=SORT_CHOICES,
+        initial='-date',
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        label='Sort By'
+    )
+
+    def __init__(self, *args, session=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Populate chat choices from session
+        if session:
+            chats = TelegramChat.objects.filter(session=session).order_by('title')
+            chat_choices = [('', 'All Chats')]
+            chat_choices += [(str(chat.chat_id), chat.title) for chat in chats]
+            self.fields['chat_id'].choices = chat_choices

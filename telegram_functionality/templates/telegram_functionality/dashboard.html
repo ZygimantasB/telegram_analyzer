@@ -34,6 +34,9 @@
             {% endif %}
         </div>
         <div>
+            <a href="{% url 'telegram:search' %}" class="btn btn-success">
+                <i class="bi bi-search"></i> Search
+            </a>
             <a href="{% url 'telegram:start_sync' %}" class="btn btn-primary">
                 <i class="bi bi-arrow-repeat"></i> Sync All
             </a>
