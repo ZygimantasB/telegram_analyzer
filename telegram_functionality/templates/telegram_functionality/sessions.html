@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+
+{% block title %}Telegram Sessions - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-phone"></i> Telegram Sessions</h2>
+        <div>
+            <a href="{% url 'telegram:connect' %}?new=1" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Add New Session
+            </a>
+            {% if sessions %}
+            <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-primary">
+                <i class="bi bi-speedometer2"></i> Dashboard
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if sessions %}
+    <!-- Sessions List -->
+    <div class="row">
+        {% for session in sessions %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card shadow h-100 {% if session.is_current %}border-primary{% endif %}">
+                <div class="card-header d-flex justify-content-between align-items-center {% if session.is_current %}bg-primary text-white{% else %}bg-light{% endif %}">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-telegram me-2" style="font-size: 1.5rem;"></i>
+                        <span class="fw-bold">
+                            {% if session.is_current %}
+                            <i class="bi bi-check-circle-fill me-1"></i> Current
+                            {% else %}
+                            Session
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% if session.is_active %}
+                    <span class="badge {% if session.is_current %}bg-light text-primary{% else %}bg-success{% endif %}">
+                        <i class="bi bi-wifi"></i> Connected
+                    </span>
+                    {% else %}
+                    <span class="badge bg-danger">
+                        <i class="bi bi-wifi-off"></i> Disconnected
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <!-- Session Info -->
+                    <div class="text-center mb-3">
+                        <div class="bg-light rounded-circle mx-auto d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
+                            <i class="bi bi-person-circle text-primary" style="font-size: 2rem;"></i>
+                        </div>
+                        <h5 class="mt-2 mb-0">{{ session.get_display_name }}</h5>
+                        {% if session.telegram_username %}
+                        <small class="text-muted">@{{ session.telegram_username }}</small>
+                        {% endif %}
+                    </div>
+
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr>
+                            <td class="text-muted"><i class="bi bi-telephone"></i> Phone</td>
+                            <td class="text-end">{{ session.phone_number }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted"><i class="bi bi-calendar"></i> Connected</td>
+                            <td class="text-end">{{ session.created_at|date:"M d, Y" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted"><i class="bi bi-chat-dots"></i> Chats</td>
+                            <td class="text-end">{{ session.chats.count }}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <div class="d-flex gap-2">
+                        {% if session.is_active and not session.is_current %}
+                        <a href="{% url 'telegram:switch_session' session.id %}" class="btn btn-primary btn-sm flex-grow-1">
+                            <i class="bi bi-arrow-right-circle"></i> Switch
+                        </a>
+                        {% endif %}
+
+                        <!-- Edit Name Button -->
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ session.id }}">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+
+                        <!-- Disconnect Button -->
+                        <form method="post" action="{% url 'telegram:disconnect_session' session.id %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to disconnect this session?')">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div class="modal fade" id="editModal{{ session.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form method="post" action="{% url 'telegram:update_session' session.id %}">
+                        {% csrf_token %}
+                        <div class="modal-header">
+                            <h5 class="modal-title">Edit Session Name</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label for="display_name{{ session.id }}" class="form-label">Display Name</label>
+                                <input type="text" class="form-control" id="display_name{{ session.id }}" name="display_name" value="{{ session.display_name|default:'' }}" placeholder="e.g., Work Phone, Personal">
+                                <div class="form-text">Leave empty to use the Telegram name.</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Info Card -->
+    <div class="card bg-light mt-4">
+        <div class="card-body">
+            <h6><i class="bi bi-info-circle"></i> About Multiple Sessions</h6>
+            <p class="mb-0 text-muted">
+                You can connect multiple Telegram accounts to analyze messages from different phone numbers.
+                Each session stores its own chats and messages separately.
+                Use the "Switch" button to change between sessions.
+            </p>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Sessions -->
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-phone text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">No Telegram Sessions</h4>
+            <p class="text-muted">Connect your first Telegram account to get started.</p>
+            <a href="{% url 'telegram:connect' %}" class="btn btn-primary btn-lg">
+                <i class="bi bi-plus-circle"></i> Connect Telegram
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

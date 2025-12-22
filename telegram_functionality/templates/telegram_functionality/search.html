@@ -1,0 +1,291 @@
+{% extends 'base.html' %}
+
+{% block title %}Advanced Search - Telegram Analyzer{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center">
+            <h2 class="mb-0"><i class="bi bi-search"></i> Advanced Search</h2>
+            {% if all_sessions and all_sessions.count > 1 %}
+            <div class="dropdown ms-3">
+                <button class="btn btn-outline-secondary dropdown-toggle btn-sm" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-phone"></i> {{ session.get_display_name }}
+                </button>
+                <ul class="dropdown-menu">
+                    {% for s in all_sessions %}
+                    <li>
+                        {% if s.id == session.id %}
+                        <span class="dropdown-item active"><i class="bi bi-check-circle-fill"></i> {{ s.get_display_name }}</span>
+                        {% else %}
+                        <a class="dropdown-item" href="{% url 'telegram:switch_session' s.id %}?next={% url 'telegram:search' %}">{{ s.get_display_name }}</a>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+        <div>
+            <a href="{% url 'telegram:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-speedometer2"></i> Dashboard
+            </a>
+            <a href="{% url 'telegram:chats' %}" class="btn btn-outline-primary">
+                <i class="bi bi-chat-dots"></i> Chats
+            </a>
+        </div>
+    </div>
+
+    <!-- Search Form -->
+    <div class="card shadow mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-funnel"></i> Search Filters
+                <button class="btn btn-sm btn-outline-light float-end" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                    <i class="bi bi-chevron-down"></i> Toggle Filters
+                </button>
+            </h5>
+        </div>
+        <div class="card-body">
+            <form method="get" id="searchForm">
+                <!-- Quick Search -->
+                <div class="row mb-3">
+                    <div class="col-md-10">
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            {{ form.query }}
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary btn-lg w-100">
+                            <i class="bi bi-search"></i> Search
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Advanced Filters -->
+                <div class="collapse show" id="advancedFilters">
+                    <hr>
+                    <div class="row g-3">
+                        <!-- Date Range -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-calendar"></i> {{ form.date_from.label }}</label>
+                            {{ form.date_from }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-calendar"></i> {{ form.date_to.label }}</label>
+                            {{ form.date_to }}
+                        </div>
+
+                        <!-- Chat Filter -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-chat-dots"></i> {{ form.chat_id.label }}</label>
+                            {{ form.chat_id }}
+                        </div>
+
+                        <!-- Chat Type -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-diagram-3"></i> {{ form.chat_type.label }}</label>
+                            {{ form.chat_type }}
+                        </div>
+
+                        <!-- Sender -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-person"></i> {{ form.sender.label }}</label>
+                            {{ form.sender }}
+                        </div>
+
+                        <!-- Direction -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-arrow-left-right"></i> {{ form.direction.label }}</label>
+                            {{ form.direction }}
+                        </div>
+
+                        <!-- Media Filter -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-paperclip"></i> {{ form.media_filter.label }}</label>
+                            {{ form.media_filter }}
+                        </div>
+
+                        <!-- Deleted Filter -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-trash"></i> {{ form.deleted_filter.label }}</label>
+                            {{ form.deleted_filter }}
+                        </div>
+
+                        <!-- Sort -->
+                        <div class="col-md-3">
+                            <label class="form-label"><i class="bi bi-sort-down"></i> {{ form.sort_by.label }}</label>
+                            {{ form.sort_by }}
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="col-md-9 d-flex align-items-end">
+                            <a href="{% url 'telegram:search' %}" class="btn btn-outline-secondary me-2">
+                                <i class="bi bi-x-circle"></i> Clear All
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Results -->
+    {% if searched %}
+    <div class="card shadow">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-list-ul"></i> Results
+                <span class="badge bg-primary ms-2">{{ total_results }} messages</span>
+            </h5>
+            {% if total_pages > 1 %}
+            <span class="text-muted">Page {{ page }} of {{ total_pages }}</span>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            {% if results %}
+            <div class="list-group list-group-flush">
+                {% for msg in results %}
+                <div class="list-group-item {% if msg.is_deleted %}bg-light{% endif %}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <!-- Chat & Sender Info -->
+                            <div class="mb-1">
+                                <a href="{% url 'telegram:chat_messages' msg.chat.chat_id %}" class="text-decoration-none">
+                                    <span class="badge bg-secondary me-1">
+                                        {% if msg.chat.chat_type == 'channel' %}
+                                        <i class="bi bi-megaphone"></i>
+                                        {% elif msg.chat.chat_type == 'supergroup' or msg.chat.chat_type == 'group' %}
+                                        <i class="bi bi-people"></i>
+                                        {% else %}
+                                        <i class="bi bi-person"></i>
+                                        {% endif %}
+                                        {{ msg.chat.title|truncatechars:30 }}
+                                    </span>
+                                </a>
+                                <strong>{{ msg.sender_name }}</strong>
+                                {% if msg.is_outgoing %}
+                                <span class="badge bg-info"><i class="bi bi-arrow-up-right"></i> Sent</span>
+                                {% endif %}
+                                {% if msg.is_deleted %}
+                                <span class="badge bg-danger"><i class="bi bi-trash"></i> Deleted</span>
+                                {% endif %}
+                            </div>
+
+                            <!-- Message Text -->
+                            <div class="message-text">
+                                {% if msg.text %}
+                                {{ msg.text|truncatechars:300 }}
+                                {% else %}
+                                <em class="text-muted">
+                                    {% if msg.has_media %}
+                                    [{{ msg.media_type|default:"Media" }}]
+                                    {% else %}
+                                    [No text]
+                                    {% endif %}
+                                </em>
+                                {% endif %}
+                            </div>
+
+                            <!-- Media indicator -->
+                            {% if msg.has_media %}
+                            <div class="mt-1">
+                                {% if msg.is_image %}
+                                <span class="badge bg-success"><i class="bi bi-image"></i> Photo</span>
+                                {% elif msg.is_video %}
+                                <span class="badge bg-primary"><i class="bi bi-camera-video"></i> Video</span>
+                                {% elif msg.is_audio %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-music-note"></i> Audio</span>
+                                {% elif msg.has_media %}
+                                <span class="badge bg-secondary"><i class="bi bi-file-earmark"></i> File</span>
+                                {% endif %}
+                                {% if msg.media_file_size %}
+                                <small class="text-muted">({{ msg.media_file_size|filesizeformat }})</small>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Date -->
+                        <div class="text-end text-muted small ms-3" style="min-width: 100px;">
+                            <div>{{ msg.date|date:"M d, Y" }}</div>
+                            <div>{{ msg.date|time:"H:i" }}</div>
+                            {% if msg.is_deleted and msg.deleted_at %}
+                            <div class="text-danger">
+                                <i class="bi bi-trash"></i> {{ msg.deleted_at|date:"M d" }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Pagination -->
+            {% if total_pages > 1 %}
+            <div class="card-footer">
+                <nav aria-label="Search results pagination">
+                    <ul class="pagination justify-content-center mb-0">
+                        <!-- First page -->
+                        {% if page > 1 %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{{ request.GET.urlencode }}&page=1">&laquo; First</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page|add:'-1' }}">Previous</a>
+                        </li>
+                        {% endif %}
+
+                        <!-- Current page indicator -->
+                        <li class="page-item active">
+                            <span class="page-link">Page {{ page }} of {{ total_pages }}</span>
+                        </li>
+
+                        <!-- Next/Last -->
+                        {% if page < total_pages %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page|add:'1' }}">Next</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ total_pages }}">Last &raquo;</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-search text-muted" style="font-size: 3rem;"></i>
+                <h5 class="mt-3">No messages found</h5>
+                <p class="text-muted">Try adjusting your search filters</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% else %}
+    <!-- Search Tips -->
+    <div class="card shadow">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-lightbulb text-warning" style="font-size: 3rem;"></i>
+            <h4 class="mt-3">Search Tips</h4>
+            <div class="row justify-content-center mt-4">
+                <div class="col-md-8">
+                    <ul class="list-group list-group-flush text-start">
+                        <li class="list-group-item"><i class="bi bi-check-circle text-success me-2"></i> Use keywords to search in message text and sender names</li>
+                        <li class="list-group-item"><i class="bi bi-check-circle text-success me-2"></i> Filter by date range to find messages from specific periods</li>
+                        <li class="list-group-item"><i class="bi bi-check-circle text-success me-2"></i> Select a specific chat or chat type to narrow results</li>
+                        <li class="list-group-item"><i class="bi bi-check-circle text-success me-2"></i> Use media filters to find photos, videos, or documents</li>
+                        <li class="list-group-item"><i class="bi bi-check-circle text-success me-2"></i> Search for deleted messages to recover lost content</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

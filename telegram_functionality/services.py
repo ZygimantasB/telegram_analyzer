@@ -202,6 +202,68 @@ class TelegramClientManager:
 
         return None
 
+    def download_single_media(self, session_string, chat_id, message_id, save_dir, user_id):
+        """Download media for a single message (manual download without size limit).
+
+        Args:
+            session_string: Telegram session string
+            chat_id: Chat ID where the message is
+            message_id: Message ID to download media from
+            save_dir: Base directory for media storage
+            user_id: User ID for path organization
+
+        Returns:
+            Dict with download result and media info
+        """
+        loop = self._get_event_loop()
+        client = self.get_client(session_string)
+
+        async def _download():
+            try:
+                await client.connect()
+
+                # Get the message from Telegram
+                entity = await client.get_entity(chat_id)
+                messages = await client.get_messages(entity, ids=[message_id])
+
+                if not messages or not messages[0]:
+                    return {'success': False, 'error': 'Message not found on Telegram'}
+
+                message = messages[0]
+
+                if not message.media:
+                    return {'success': False, 'error': 'Message has no media'}
+
+                # Get media info
+                media_info = self._get_media_info(message)
+                if not media_info:
+                    return {'success': False, 'error': 'Could not get media info'}
+
+                # Download without size limit (pass very large max_size)
+                result = await self._download_media_async(
+                    client, message, save_dir, user_id, chat_id,
+                    max_size=float('inf')  # No size limit for manual downloads
+                )
+
+                if result and result.get('file_path'):
+                    return {
+                        'success': True,
+                        'file_path': result['file_path'],
+                        'file_name': result['file_name'],
+                        'file_size': result['file_size'],
+                        'mime_type': result['mime_type'],
+                    }
+                else:
+                    return {'success': False, 'error': 'Failed to download media'}
+
+            except Exception as e:
+                logger.error(f"Error downloading single media: {e}")
+                return {'success': False, 'error': str(e)}
+            finally:
+                await client.disconnect()
+
+        return loop.run_until_complete(_download())
+
     async def _send_code_async(self, client, phone_number):
         """Send verification code to phone number."""
         await client.connect()
